@@ -12,13 +12,10 @@ import SwiftUI
 class MeditationStore {
     private(set) var sessions: [MeditationSession] = []
     
-    private let localSaveKey = "meditation_sessions"
-    private let cloudSaveKey = "meditation_sessions_cloud"
-    private let cloudStore = NSUbiquitousKeyValueStore.default
+    private let saveKey = "meditation_sessions"
     
     init() {
         loadSessions()
-        setupCloudSync()
     }
     
     func addSession(_ session: MeditationSession) {
@@ -127,94 +124,18 @@ class MeditationStore {
             .sorted { $0.date < $1.date }
     }
     
-    // MARK: - iCloud Sync
-    
-    private func setupCloudSync() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(cloudDataChanged),
-            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-            object: cloudStore
-        )
-        
-        // Trigger initial sync
-        cloudStore.synchronize()
-    }
-    
-    @objc private func cloudDataChanged(_ notification: Notification) {
-        // Merge cloud data with local data
-        if let cloudData = cloudStore.data(forKey: cloudSaveKey),
-           let cloudSessions = try? JSONDecoder().decode([MeditationSession].self, from: cloudData) {
-            mergeSessions(cloudSessions)
-        }
-    }
-    
-    private func mergeSessions(_ cloudSessions: [MeditationSession]) {
-        // Merge by keeping unique sessions from both sources
-        var allSessions = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
-        
-        for session in cloudSessions {
-            if allSessions[session.id] == nil {
-                allSessions[session.id] = session
-            }
-        }
-        
-        let merged = Array(allSessions.values).sorted { $0.date < $1.date }
-        
-        if merged != sessions {
-            sessions = merged
-            saveToLocal()
-        }
-    }
-    
     // MARK: - Persistence
     
     private func saveSessions() {
-        saveToLocal()
-        saveToCloud()
-    }
-    
-    private func saveToLocal() {
         if let encoded = try? JSONEncoder().encode(sessions) {
-            UserDefaults.standard.set(encoded, forKey: localSaveKey)
-        }
-    }
-    
-    private func saveToCloud() {
-        if let encoded = try? JSONEncoder().encode(sessions) {
-            cloudStore.set(encoded, forKey: cloudSaveKey)
-            cloudStore.synchronize()
+            UserDefaults.standard.set(encoded, forKey: saveKey)
         }
     }
     
     private func loadSessions() {
-        // Load from local first
-        var localSessions: [MeditationSession] = []
-        if let data = UserDefaults.standard.data(forKey: localSaveKey),
+        if let data = UserDefaults.standard.data(forKey: saveKey),
            let decoded = try? JSONDecoder().decode([MeditationSession].self, from: data) {
-            localSessions = decoded
-        }
-        
-        // Load from cloud
-        var cloudSessions: [MeditationSession] = []
-        if let cloudData = cloudStore.data(forKey: cloudSaveKey),
-           let decoded = try? JSONDecoder().decode([MeditationSession].self, from: cloudData) {
-            cloudSessions = decoded
-        }
-        
-        // Merge both sources
-        var allSessions = Dictionary(uniqueKeysWithValues: localSessions.map { ($0.id, $0) })
-        for session in cloudSessions {
-            if allSessions[session.id] == nil {
-                allSessions[session.id] = session
-            }
-        }
-        
-        sessions = Array(allSessions.values).sorted { $0.date < $1.date }
-        
-        // Save merged result back to both stores
-        if !sessions.isEmpty {
-            saveSessions()
+            sessions = decoded.sorted { $0.date < $1.date }
         }
     }
 }
