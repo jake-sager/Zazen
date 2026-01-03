@@ -12,28 +12,19 @@ class TimerSettings: ObservableObject, Codable {
     @Published var hours: Int = 0
     @Published var minutes: Int = 5
     @Published var seconds: Int = 0
-    @Published var bellSound: BellSound = .singing
+    @Published var bellSound: BellSound = .bowlB
     @Published var intervalMinutes: Int = 0  // 0 means disabled
-    @Published var intervalBellSound: BellSound = .singing
+    @Published var intervalBellSound: BellSound = .bowlB
     
     private static let saveKey = "timer_settings"
     
     enum BellSound: String, CaseIterable, Identifiable, Codable {
-        case singing = "Singing Bowl"
-        case tingsha = "Tingsha"
-        case woodBlock = "Wood Block"
+        case bowlA = "I"
+        case bowlB = "II"
+        case bowlC = "III"
         case silence = "Silence"
         
         var id: String { rawValue }
-        
-        var description: String {
-            switch self {
-            case .singing: return "Traditional singing bowl tone"
-            case .tingsha: return "Bright Tibetan cymbal"
-            case .woodBlock: return "Soft wooden percussion"
-            case .silence: return "No sound"
-            }
-        }
     }
     
     // MARK: - Codable

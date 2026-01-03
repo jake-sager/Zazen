@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct CylindricalPicker: View {
     @Binding var value: Int
@@ -18,6 +19,11 @@ struct CylindricalPicker: View {
     
     @State private var scrollOffset: CGFloat = 0
     @State private var lastDragValue: CGFloat = 0
+    @State private var lastTickIndex: Int = 0
+    
+    // Haptic feedback generator
+    private let impactGenerator = UIImpactFeedbackGenerator(style: .light)
+    private let selectionGenerator = UISelectionFeedbackGenerator()
     
     private var values: [Int] { Array(range) }
     private var innerWidth: CGFloat { pickerWidth - wallWidth * 2 }
@@ -45,6 +51,10 @@ struct CylindricalPicker: View {
         .onAppear {
             let index = values.firstIndex(of: value) ?? 0
             scrollOffset = -CGFloat(index) * itemHeight
+            lastTickIndex = index
+            // Prepare haptic generators
+            impactGenerator.prepare()
+            selectionGenerator.prepare()
         }
     }
     
@@ -221,6 +231,14 @@ struct CylindricalPicker: View {
                 let maxOffset: CGFloat = 0
                 let minOffset = -CGFloat(values.count - 1) * itemHeight
                 scrollOffset = max(minOffset, min(maxOffset, newOffset))
+                
+                // Check if we crossed a tick boundary
+                let currentIndex = Int(round(-scrollOffset / itemHeight))
+                if currentIndex != lastTickIndex {
+                    // Crossed a boundary - trigger feedback!
+                    triggerTickFeedback()
+                    lastTickIndex = currentIndex
+                }
             }
             .onEnded { gesture in
                 lastDragValue = 0
@@ -232,12 +250,26 @@ struct CylindricalPicker: View {
                 let clampedIndex = max(0, min(values.count - 1, nearestIndex))
                 let targetOffset = -CGFloat(clampedIndex) * itemHeight
                 
+                // Final snap feedback
+                if clampedIndex != lastTickIndex {
+                    triggerTickFeedback()
+                    lastTickIndex = clampedIndex
+                }
+                
                 withAnimation(.interpolatingSpring(stiffness: 300, damping: 25)) {
                     scrollOffset = targetOffset
                 }
                 
                 value = values[clampedIndex]
             }
+    }
+    
+    private func triggerTickFeedback() {
+        // Haptic feedback
+        impactGenerator.impactOccurred(intensity: 0.6)
+        
+        // Click sound
+        SoundManager.shared.playTickSound()
     }
 }
 

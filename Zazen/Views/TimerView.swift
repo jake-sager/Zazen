@@ -235,31 +235,23 @@ struct TimerView: View {
                         .foregroundColor(settings.intervalMinutes > 0 ? Color.textPrimary : Color.textMuted)
                 }
                 
-                // Slider with tick marks
-                VStack(spacing: 4) {
-                    Slider(
-                        value: Binding(
-                            get: { Double(min(settings.intervalMinutes, maxIntervalMinutes)) },
-                            set: {
-                                settings.intervalMinutes = Int($0)
-                                settings.save()
-                            }
-                        ),
-                        in: 0...Double(max(maxIntervalMinutes, 1)),
-                        step: 1
-                    )
-                    .tint(Color.accentPrimary)
-                    .disabled(maxIntervalMinutes < 1)
-                    .onChange(of: maxIntervalMinutes) { _, newMax in
-                        if settings.intervalMinutes > newMax {
-                            settings.intervalMinutes = max(newMax, 0)
+                Slider(
+                    value: Binding(
+                        get: { Double(min(settings.intervalMinutes, maxIntervalMinutes)) },
+                        set: {
+                            settings.intervalMinutes = Int($0)
                             settings.save()
                         }
-                    }
-                    
-                    // Tick marks
-                    if maxIntervalMinutes >= 1 {
-                        sliderTickMarks
+                    ),
+                    in: 0...Double(max(maxIntervalMinutes, 1)),
+                    step: 1
+                )
+                .tint(Color.accentPrimary)
+                .disabled(maxIntervalMinutes < 1)
+                .onChange(of: maxIntervalMinutes) { _, newMax in
+                    if settings.intervalMinutes > newMax {
+                        settings.intervalMinutes = max(newMax, 0)
+                        settings.save()
                     }
                 }
                 
@@ -324,9 +316,7 @@ struct TimerView: View {
     
     private func iconForSound(_ sound: TimerSettings.BellSound) -> String {
         switch sound {
-        case .singing: return "bell.fill"
-        case .tingsha: return "bell.badge.fill"
-        case .woodBlock: return "circle.fill"
+        case .bowlA, .bowlB, .bowlC: return "bell.fill"
         case .silence: return "speaker.slash.fill"
         }
     }
@@ -349,32 +339,6 @@ struct TimerView: View {
         } else {
             return "Every \(settings.intervalMinutes) min"
         }
-    }
-    
-    private var sliderTickMarks: some View {
-        GeometryReader { geometry in
-            let tickCount = maxIntervalMinutes + 1
-            let spacing = geometry.size.width / CGFloat(max(tickCount - 1, 1))
-            
-            HStack(spacing: 0) {
-                ForEach(0..<tickCount, id: \.self) { index in
-                    VStack(spacing: 2) {
-                        Rectangle()
-                            .fill(Color.textMuted.opacity(0.4))
-                            .frame(width: 1, height: index % 5 == 0 ? 6 : 4)
-                        
-                        if index % 5 == 0 || index == tickCount - 1 {
-                            Text("\(index)")
-                                .font(.system(size: 8))
-                                .foregroundColor(Color.textMuted.opacity(0.6))
-                        }
-                    }
-                    .frame(width: index == tickCount - 1 ? nil : spacing, alignment: .leading)
-                }
-            }
-        }
-        .frame(height: 20)
-        .padding(.horizontal, 2)
     }
     
     private func intervalBellSoundButton(_ sound: TimerSettings.BellSound) -> some View {
