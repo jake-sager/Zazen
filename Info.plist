@@ -33,6 +33,8 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIAppFonts</key>
 	<array>
 		<string>PlayfairDisplay.ttf</string>

@@ -8,7 +8,7 @@
 import AVFoundation
 import AudioToolbox
 
-final class SoundManager: Sendable {
+final class SoundManager {
     static let shared = SoundManager()
     
     // File names for bundled sounds (without extension)
@@ -21,11 +21,16 @@ final class SoundManager: Sendable {
     
     private let tickSoundFile = "volvo-signal-cleaned"
     
+    // Track active players so we can stop them
+    private var activePlayers: [AVAudioPlayer] = []
+    private let playerQueue = DispatchQueue(label: "com.zazen.soundmanager")
+    
     private init() {}
     
     /// Configure audio session for background playback (call when starting meditation)
     func configureForBackgroundPlayback() {
         do {
+            // Use .playback category without mixWithOthers for reliable background audio
             try AVAudioSession.sharedInstance().setCategory(
                 .playback,
                 mode: .default,
@@ -34,6 +39,25 @@ final class SoundManager: Sendable {
             try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("Background audio session error: \(error)")
+        }
+    }
+    
+    /// Deactivate audio session when meditation is done
+    func deactivateAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("Error deactivating audio session: \(error)")
+        }
+    }
+    
+    /// Stop all currently playing sounds
+    func stopAllSounds() {
+        playerQueue.sync {
+            for player in activePlayers {
+                player.stop()
+            }
+            activePlayers.removeAll()
         }
     }
     
@@ -64,10 +88,26 @@ final class SoundManager: Sendable {
         }
     }
     
+    /// Get the file URL for a bell sound
+    func soundFileURL(for sound: TimerSettings.BellSound) -> URL? {
+        guard let fileName = soundFiles[sound] else { return nil }
+        return Bundle.main.url(forResource: fileName, withExtension: "wav") ??
+               Bundle.main.url(forResource: fileName, withExtension: "caf") ??
+               Bundle.main.url(forResource: fileName, withExtension: "m4a") ??
+               Bundle.main.url(forResource: fileName, withExtension: "mp3")
+    }
+    
+    /// Get the file name for a bell sound (for notifications)
+    func soundFileName(for sound: TimerSettings.BellSound) -> String? {
+        guard let baseName = soundFiles[sound] else { return nil }
+        // Return with .wav extension for notification sounds
+        return "\(baseName).wav"
+    }
+    
     private func playBell(sound: TimerSettings.BellSound, softer: Bool) {
         // Ensure audio session is active
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("Audio session error: \(error)")
@@ -75,11 +115,7 @@ final class SoundManager: Sendable {
         }
         
         // Play bundled sound
-        if let fileName = soundFiles[sound],
-           let url = Bundle.main.url(forResource: fileName, withExtension: "wav") ??
-                     Bundle.main.url(forResource: fileName, withExtension: "caf") ??
-                     Bundle.main.url(forResource: fileName, withExtension: "m4a") ??
-                     Bundle.main.url(forResource: fileName, withExtension: "mp3") {
+        if let url = soundFileURL(for: sound) {
             playFromURL(url, volume: softer ? 0.5 : 1.0)
         } else {
             print("Sound file not found for: \(sound)")
@@ -92,7 +128,21 @@ final class SoundManager: Sendable {
             player.volume = volume
             player.prepareToPlay()
             player.play()
-            keepAlive(player: player, for: player.duration + 0.5)
+            
+            // Track the player
+            playerQueue.sync {
+                activePlayers.append(player)
+            }
+            
+            // Remove from active players when done
+            let duration = player.duration + 0.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+                self?.playerQueue.sync {
+                    self?.activePlayers.removeAll { $0 === player }
+                }
+            }
+            
+            keepAlive(player: player, for: duration)
         } catch {
             print("Error playing sound from \(url): \(error)")
         }

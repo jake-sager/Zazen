@@ -74,7 +74,11 @@ struct ContentView: View {
     }
     
     private func tabButton(icon: String, label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: {
+            // Stop any playing sounds when switching tabs
+            SoundManager.shared.stopAllSounds()
+            action()
+        }) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 22))

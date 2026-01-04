@@ -7,22 +7,26 @@
 
 import SwiftUI
 import UIKit
+import ActivityKit
 
 enum TimerState {
     case idle
     case running
+    case overtime  // Timer completed but user continues meditating
     case completed
 }
 
 struct TimerView: View {
     @State private var timerState: TimerState = .idle
     @State private var remainingSeconds: Int = 0
+    @State private var overtimeSeconds: Int = 0  // Track overtime
     @State private var timer: Timer?
     @State private var initialDuration: Int = 0
     @State private var originalBrightness: CGFloat = 1.0
     @State private var isDimmed: Bool = false
     @State private var dimTimer: Timer?
     @State private var meditationEndTime: Date?
+    @State private var meditationStartTime: Date?
     
     @State private var lastSavedDurationSeconds: Int = 0
     @State private var lastSavedStreak: Int = 0
@@ -74,6 +78,15 @@ struct TimerView: View {
                             scheduleDimming()
                         }
                     }
+            } else if timerState == .overtime {
+                overtimeView
+                    .onTapGesture {
+                        // Wake screen on tap
+                        if isDimmed {
+                            restoreBrightness()
+                            scheduleDimming()
+                        }
+                    }
             }
             
             // Completion overlay
@@ -83,13 +96,22 @@ struct TimerView: View {
         }
         .onAppear {
             // Keep screen on during meditation
-            UIApplication.shared.isIdleTimerDisabled = timerState == .running
+            UIApplication.shared.isIdleTimerDisabled = timerState == .running || timerState == .overtime
+            
+            // Request notification permission on first appearance
+            Task {
+                await NotificationManager.shared.requestAuthorization()
+            }
+        }
+        .onDisappear {
+            // Stop any playing sounds when leaving the view
+            SoundManager.shared.stopAllSounds()
         }
         .onChange(of: timerState) { _, newState in
-            UIApplication.shared.isIdleTimerDisabled = newState == .running
-            isSessionActive = newState != .idle
+            UIApplication.shared.isIdleTimerDisabled = newState == .running || newState == .overtime
+            isSessionActive = newState != .idle && newState != .completed
             
-            if newState == .running {
+            if newState == .running || newState == .overtime {
                 scheduleDimming()
             } else {
                 cancelDimming()
@@ -104,21 +126,32 @@ struct TimerView: View {
     // MARK: - Background/Foreground Handling
     
     private func handleScenePhaseChange(_ phase: ScenePhase) {
-        guard timerState == .running, let endTime = meditationEndTime else { return }
-        
         switch phase {
         case .active:
-            // App became active - recalculate remaining time
-            let now = Date()
-            if now >= endTime {
-                // Timer should have completed while in background
-                completeTimer()
-            } else {
-                let remaining = Int(endTime.timeIntervalSince(now))
-                remainingSeconds = remaining
+            if timerState == .running, let endTime = meditationEndTime {
+                // App became active - recalculate remaining time
+                let now = Date()
+                if now >= endTime {
+                    // Timer should have completed while in background
+                    // Calculate how much overtime has passed
+                    let overtimePassed = Int(now.timeIntervalSince(endTime))
+                    overtimeSeconds = overtimePassed
+                    transitionToOvertime()
+                } else {
+                    let remaining = Int(endTime.timeIntervalSince(now))
+                    remainingSeconds = remaining
+                }
+            } else if timerState == .overtime, let endTime = meditationEndTime {
+                // Recalculate overtime
+                let now = Date()
+                overtimeSeconds = Int(now.timeIntervalSince(endTime))
             }
         case .background:
-            // App going to background - timer will continue via notifications
+            // Timer will continue via notifications
+            // Stop any sounds that are currently playing (for test previews)
+            if timerState == .idle {
+                SoundManager.shared.stopAllSounds()
+            }
             break
         case .inactive:
             break
@@ -196,6 +229,47 @@ struct TimerView: View {
                 .buttonStyle(NeumorphicPillButtonStyle(kind: .primary))
             }
             .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+    }
+    
+    // MARK: - Overtime View
+    
+    private var overtimeView: some View {
+        VStack {
+            Spacer()
+            
+            // Same timer display, just counting up with "+"
+            TabularTimerText(text: "+\(formatTime(overtimeSeconds))", fontSize: 92)
+            
+            // Add overtime button - right beneath the timer
+            Button(action: { finishOvertime(includeOvertime: true) }) {
+                Text("ADD +\(formatTimeCompact(overtimeSeconds).uppercased())")
+            }
+            .buttonStyle(NeumorphicPillButtonStyle(kind: .secondary))
+            .padding(.horizontal, 48)
+            .padding(.top, 16)
+            
+            // Completed time note
+            Text("\(formatTimeCompact(initialDuration)) completed")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Color.textMuted)
+                .padding(.top, 12)
+            
+            if isDimmed {
+                Text("tap to brighten")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color.textMuted.opacity(0.5))
+                    .padding(.top, 20)
+            }
+            
+            Spacer()
+
+            // Finish button (saves original time only)
+            Button(action: { finishOvertime(includeOvertime: false) }) {
+                Text("FINISH")
+            }
+            .buttonStyle(NeumorphicButtonStyle())
             .padding(.bottom, 24)
         }
     }
@@ -473,20 +547,41 @@ struct TimerView: View {
         isSessionActive = true
         lastSavedDurationSeconds = 0
         lastSavedStreak = 0
+        overtimeSeconds = 0
         initialDuration = totalSeconds
         remainingSeconds = totalSeconds
+        meditationStartTime = Date()
         meditationEndTime = Date().addingTimeInterval(TimeInterval(totalSeconds))
         timerState = .running
         
         // Configure audio session for background playback
         SoundManager.shared.configureForBackgroundPlayback()
         
+        // Schedule notifications for background sounds
+        NotificationManager.shared.scheduleMeditationNotifications(
+            duration: TimeInterval(totalSeconds),
+            bellSound: settings.bellSound,
+            intervalMinutes: settings.intervalMinutes,
+            intervalBellSound: settings.intervalBellSound
+        )
+        
+        // Start Live Activity
+        Task { @MainActor in
+            LiveActivityManager.shared.startActivity(totalDuration: totalSeconds)
+        }
+        
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             if remainingSeconds > 1 {
                 remainingSeconds -= 1
                 checkIntervalBell()
+                
+                // Update Live Activity
+                Task { @MainActor in
+                    LiveActivityManager.shared.updateActivity(remainingSeconds: remainingSeconds)
+                }
             } else {
-                completeTimer()
+                // Timer is done, transition to overtime
+                transitionToOvertime()
             }
         }
         
@@ -502,8 +597,63 @@ struct TimerView: View {
         let elapsed = initialDuration - remainingSeconds
         
         // Check if we've passed an interval boundary
+        // Only play if app is in foreground (notifications handle background)
         if elapsed > 0 && elapsed % intervalSeconds == 0 && elapsed != initialDuration {
             SoundManager.shared.playBellSound(settings.intervalBellSound, softer: true)
+        }
+    }
+    
+    private func transitionToOvertime() {
+        timer?.invalidate()
+        timer = nil
+        remainingSeconds = 0
+        
+        // Play completion sound
+        if settings.bellSound != .silence {
+            SoundManager.shared.playBellSound(settings.bellSound)
+        }
+        
+        withAnimation {
+            timerState = .overtime
+        }
+        
+        // Update Live Activity to overtime state
+        Task { @MainActor in
+            LiveActivityManager.shared.transitionToOvertime(overtimeSeconds: overtimeSeconds)
+        }
+        
+        // Start overtime timer
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            overtimeSeconds += 1
+            
+            // Update Live Activity with overtime
+            Task { @MainActor in
+                LiveActivityManager.shared.transitionToOvertime(overtimeSeconds: overtimeSeconds)
+            }
+        }
+        RunLoop.current.add(timer!, forMode: .common)
+    }
+    
+    private func finishOvertime(includeOvertime: Bool) {
+        timer?.invalidate()
+        timer = nil
+        
+        // Cancel any remaining notifications
+        NotificationManager.shared.cancelAllMeditationNotifications()
+        
+        // End Live Activity
+        Task { @MainActor in
+            LiveActivityManager.shared.endActivity()
+        }
+        
+        // Calculate total duration
+        let totalDuration = includeOvertime ? (initialDuration + overtimeSeconds) : initialDuration
+        
+        // Save the session
+        saveSession(durationSeconds: totalDuration)
+        
+        withAnimation {
+            timerState = .completed
         }
     }
     
@@ -511,6 +661,9 @@ struct TimerView: View {
         timer?.invalidate()
         timer = nil
         meditationEndTime = nil
+        
+        // Cancel any remaining notifications
+        NotificationManager.shared.cancelAllMeditationNotifications()
         
         // Save the session
         saveSession(durationSeconds: initialDuration)
@@ -531,13 +684,25 @@ struct TimerView: View {
         }
         lastSavedDurationSeconds = 0
         lastSavedStreak = 0
+        overtimeSeconds = 0
         isSessionActive = false
+        
+        // Deactivate audio session
+        SoundManager.shared.deactivateAudioSession()
     }
     
     private func endSessionEarly(save: Bool) {
         timer?.invalidate()
         timer = nil
         meditationEndTime = nil
+        
+        // Cancel all scheduled notifications
+        NotificationManager.shared.cancelAllMeditationNotifications()
+        
+        // End Live Activity
+        Task { @MainActor in
+            LiveActivityManager.shared.endActivity()
+        }
         
         let elapsed = max(initialDuration - remainingSeconds, 0)
         
@@ -549,9 +714,11 @@ struct TimerView: View {
         } else {
             timerState = .idle
             isSessionActive = false
+            SoundManager.shared.deactivateAudioSession()
         }
         
         remainingSeconds = 0
+        overtimeSeconds = 0
     }
     
     private func saveSession(durationSeconds: Int) {
@@ -570,6 +737,20 @@ struct TimerView: View {
             return String(format: "%02d:%02d:%02d", h, m, s)
         } else {
             return String(format: "%02d:%02d", m, s)
+        }
+    }
+    
+    private func formatTimeCompact(_ totalSeconds: Int) -> String {
+        let h = totalSeconds / 3600
+        let m = (totalSeconds % 3600) / 60
+        let s = totalSeconds % 60
+        
+        if h > 0 {
+            return "\(h)h \(m)m"
+        } else if m > 0 {
+            return "\(m)m \(s)s"
+        } else {
+            return "\(s)s"
         }
     }
 }
