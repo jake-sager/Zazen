@@ -9,6 +9,7 @@ import UserNotifications
 import AVFoundation
 
 /// Manages local notifications for background bell sounds during meditation
+/// Note: These notifications are sound-only with no visible banner/alert
 final class NotificationManager {
     static let shared = NotificationManager()
     
@@ -22,10 +23,11 @@ final class NotificationManager {
     
     // MARK: - Authorization
     
-    /// Request notification permission
+    /// Request notification permission (sound only - no alerts or badges)
     func requestAuthorization() async -> Bool {
         do {
-            let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
+            // Only request sound - we don't want banners or badges
+            let granted = try await notificationCenter.requestAuthorization(options: [.sound])
             return granted
         } catch {
             print("Notification authorization error: \(error)")
@@ -66,12 +68,16 @@ final class NotificationManager {
         }
     }
     
-    /// Schedule the completion bell notification
+    /// Schedule the completion bell notification (sound only - no banner)
     private func scheduleCompletionNotification(in seconds: TimeInterval, sound: TimerSettings.BellSound) {
         let content = UNMutableNotificationContent()
-        content.title = "Meditation Complete"
-        content.body = "Your meditation session has ended."
+        // No title or body = no visible banner
         content.categoryIdentifier = "MEDITATION_COMPLETE"
+        
+        // Set interruption level to passive so it doesn't interrupt
+        if #available(iOS 15.0, *) {
+            content.interruptionLevel = .passive
+        }
         
         // Set the custom sound
         if let soundName = SoundManager.shared.soundFileName(for: sound) {
@@ -94,7 +100,7 @@ final class NotificationManager {
         }
     }
     
-    /// Schedule interval bell notifications
+    /// Schedule interval bell notifications (sound only - no banner)
     private func scheduleIntervalNotifications(
         totalDuration: TimeInterval,
         intervalMinutes: Int,
@@ -106,11 +112,15 @@ final class NotificationManager {
         
         while currentTime < totalDuration {
             let content = UNMutableNotificationContent()
-            content.title = "Interval Bell"
-            content.body = "Mindfulness reminder"
+            // No title or body = no visible banner
             content.categoryIdentifier = "MEDITATION_INTERVAL"
             
-            // Set the custom sound (softer for interval)
+            // Set interruption level to passive so it doesn't interrupt
+            if #available(iOS 15.0, *) {
+                content.interruptionLevel = .passive
+            }
+            
+            // Set the custom sound
             if let soundName = SoundManager.shared.soundFileName(for: sound) {
                 content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: soundName))
             } else {
@@ -169,4 +179,3 @@ final class NotificationManager {
         }
     }
 }
-

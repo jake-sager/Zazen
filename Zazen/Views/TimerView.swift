@@ -265,13 +265,41 @@ struct TimerView: View {
             
             Spacer()
 
-            // Finish button (saves original time only)
-            Button(action: { finishOvertime(includeOvertime: false) }) {
-                Text("FINISH")
+            HStack(spacing: 12) {
+                Button(action: { discardSession() }) {
+                    Text("DISCARD")
+                }
+                .buttonStyle(NeumorphicPillButtonStyle(kind: .destructive))
+
+                // Finish button (saves original time only)
+                Button(action: { finishOvertime(includeOvertime: false) }) {
+                    Text("SAVE")
+                }
+                .buttonStyle(NeumorphicPillButtonStyle(kind: .primary))
             }
-            .buttonStyle(NeumorphicButtonStyle())
+            .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }
+    }
+    
+    private func discardSession() {
+        timer?.invalidate()
+        timer = nil
+        meditationEndTime = nil
+        
+        // Cancel all scheduled notifications
+        NotificationManager.shared.cancelAllMeditationNotifications()
+        
+        // End Live Activity
+        Task { @MainActor in
+            LiveActivityManager.shared.endActivity()
+        }
+        
+        timerState = .idle
+        isSessionActive = false
+        remainingSeconds = 0
+        overtimeSeconds = 0
+        SoundManager.shared.deactivateAudioSession()
     }
     
     // MARK: - Settings View
