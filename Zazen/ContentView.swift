@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var store = MeditationStore()
     @State private var selectedTab: Tab = .timer
     @StateObject private var timerSettings = TimerSettings()
+    @State private var isSessionActive: Bool = false
     
     enum Tab {
         case timer
@@ -25,7 +26,7 @@ struct ContentView: View {
                     .ignoresSafeArea()
                 
                 if selectedTab == .timer {
-                    TimerView(store: store, settings: timerSettings)
+                    TimerView(store: store, settings: timerSettings, isSessionActive: $isSessionActive)
                         .transition(.opacity)
                 } else {
                     StatsView(store: store)
@@ -35,7 +36,9 @@ struct ContentView: View {
             .animation(.easeInOut(duration: 0.2), value: selectedTab)
             
             // Tab bar - pinned to bottom
-            tabBar
+            if !isSessionActive {
+                tabBar
+            }
         }
         .ignoresSafeArea(.keyboard)
     }

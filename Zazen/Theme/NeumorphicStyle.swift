@@ -142,14 +142,16 @@ extension View {
 
 struct NeumorphicButtonStyle: ButtonStyle {
     var isDestructive: Bool = false
+    var horizontalPadding: CGFloat = 64
+    var verticalPadding: CGFloat = 16
     
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .semibold, design: .default))
             .tracking(2.4)
             .foregroundColor(Color.buttonText)
-            .padding(.horizontal, 64)
-            .padding(.vertical, 16)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
             .background(
                 ZStack {
                     Color.buttonBackground
@@ -170,5 +172,97 @@ struct NeumorphicButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .offset(y: configuration.isPressed ? 1 : 0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Secondary/Destructive Pill Button (for minimal in-session actions)
+
+struct NeumorphicPillButtonStyle: ButtonStyle {
+    enum Kind {
+        case primary
+        case secondary
+        case destructive
+    }
+    
+    var kind: Kind = .secondary
+    var horizontalPadding: CGFloat = 18
+    var verticalPadding: CGFloat = 14
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold, design: .default))
+            .tracking(2.0)
+            .foregroundColor(foregroundColor)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
+            .frame(maxWidth: .infinity)
+            .background(
+                ZStack {
+                    backgroundColor
+                    LinearGradient(
+                        colors: gradientColors,
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            )
+            .clipShape(Capsule())
+            .shadow(color: Color.shadowDark.opacity(0.35), radius: 8, x: 0, y: 4)
+            .shadow(color: Color.shadowLight.opacity(0.6), radius: 6, x: 0, y: -2)
+            .overlay(
+                Capsule()
+                    .stroke(borderColor, lineWidth: 1)
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .offset(y: configuration.isPressed ? 1 : 0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+    
+    private var foregroundColor: Color {
+        switch kind {
+        case .primary:
+            return Color.buttonText
+        case .secondary:
+            return Color.textPrimary
+        case .destructive:
+            return Color.red.opacity(0.95)
+        }
+    }
+    
+    private var backgroundColor: Color {
+        switch kind {
+        case .primary:
+            return Color.buttonBackground
+        case .secondary, .destructive:
+            return Color.neumorphicCard
+        }
+    }
+    
+    private var borderColor: Color {
+        switch kind {
+        case .primary:
+            return Color.white.opacity(0.12)
+        case .secondary:
+            return Color.borderPrimary.opacity(0.9)
+        case .destructive:
+            return Color.red.opacity(0.28)
+        }
+    }
+    
+    private var gradientColors: [Color] {
+        switch kind {
+        case .primary:
+            return [
+                Color.white.opacity(0.12),
+                Color.clear,
+                Color.black.opacity(0.08)
+            ]
+        case .secondary, .destructive:
+            return [
+                Color.white.opacity(0.10),
+                Color.clear,
+                Color.black.opacity(0.05)
+            ]
+        }
     }
 }

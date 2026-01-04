@@ -19,16 +19,19 @@ struct TimerView: View {
     @State private var remainingSeconds: Int = 0
     @State private var timer: Timer?
     @State private var initialDuration: Int = 0
-    @State private var lastIntervalBell: Int = 0
     @State private var originalBrightness: CGFloat = 1.0
     @State private var isDimmed: Bool = false
     @State private var dimTimer: Timer?
     @State private var meditationEndTime: Date?
     
+    @State private var lastSavedDurationSeconds: Int = 0
+    @State private var lastSavedStreak: Int = 0
+    
     @Environment(\.scenePhase) private var scenePhase
     
     var store: MeditationStore
     @ObservedObject var settings: TimerSettings
+    @Binding var isSessionActive: Bool
     
     // Time until screen dims (in seconds)
     private let dimDelay: TimeInterval = 30
@@ -42,20 +45,13 @@ struct TimerView: View {
             
             // Main content
             if timerState == .idle {
-                VStack(spacing: 0) {
-                    // Scrollable content area
-                    ScrollView {
-                        VStack(spacing: 24) {
-                            // Picker
-                            pickerView
-                                .padding(.top, 40)
-                            
-                            // Settings
-                            settingsView
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 100) // Space for button
-                    }
+                VStack(spacing: 24) {
+                    // Picker
+                    pickerView
+                        .padding(.top, 40)
+                    
+                    // Settings
+                    settingsView
                     
                     Spacer()
                     
@@ -68,6 +64,7 @@ struct TimerView: View {
                     .opacity(settings.hours == 0 && settings.minutes == 0 && settings.seconds == 0 ? 0.35 : 1)
                     .padding(.bottom, 24)
                 }
+                .padding(.horizontal, 24)
             } else if timerState == .running {
                 runningView
                     .onTapGesture {
@@ -90,6 +87,7 @@ struct TimerView: View {
         }
         .onChange(of: timerState) { _, newState in
             UIApplication.shared.isIdleTimerDisabled = newState == .running
+            isSessionActive = newState != .idle
             
             if newState == .running {
                 scheduleDimming()
@@ -175,11 +173,7 @@ struct TimerView: View {
         VStack {
             Spacer()
             
-            Text(formatTime(remainingSeconds))
-                .font(.system(size: 56, weight: .light, design: .default))
-                .tracking(1.12)
-                .foregroundColor(Color.textPrimary)
-                .monospacedDigit()
+            TabularTimerText(text: formatTime(remainingSeconds), fontSize: 92)
             
             if isDimmed {
                 Text("tap to brighten")
@@ -189,11 +183,19 @@ struct TimerView: View {
             }
             
             Spacer()
-            
-            Button(action: stopTimer) {
-                Text("STOP")
+
+            HStack(spacing: 12) {
+                Button(action: { endSessionEarly(save: false) }) {
+                    Text("DISCARD")
+                }
+                .buttonStyle(NeumorphicPillButtonStyle(kind: .destructive))
+
+                Button(action: { endSessionEarly(save: true) }) {
+                    Text("SAVE & END")
+                }
+                .buttonStyle(NeumorphicPillButtonStyle(kind: .primary))
             }
-            .buttonStyle(NeumorphicButtonStyle(isDestructive: true))
+            .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }
     }
@@ -380,17 +382,30 @@ struct TimerView: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 12) {
-                Text("Complete")
+                Label("Saved", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 24, weight: .medium))
                     .tracking(1.2)
                     .foregroundColor(Color.textPrimary)
                 
+                if lastSavedDurationSeconds > 0 {
+                    Text("Meditated \(formatTime(lastSavedDurationSeconds))")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color.textMuted)
+                }
+                
+                if lastSavedStreak > 0 {
+                    Text("Streak: \(lastSavedStreak) \(lastSavedStreak == 1 ? "day" : "days")")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color.textSecondary)
+                }
+                
                 Text("tap to dismiss")
                     .font(.system(size: 13))
                     .foregroundColor(Color.textMuted)
+                    .padding(.top, 6)
             }
-            .padding(.horizontal, 80)
-            .padding(.vertical, 60)
+            .padding(.horizontal, 72)
+            .padding(.vertical, 54)
             .neumorphicCard()
         }
         .transition(.opacity)
@@ -455,9 +470,11 @@ struct TimerView: View {
         let totalSeconds = settings.hours * 3600 + settings.minutes * 60 + settings.seconds
         guard totalSeconds > 0 else { return }
         
+        isSessionActive = true
+        lastSavedDurationSeconds = 0
+        lastSavedStreak = 0
         initialDuration = totalSeconds
         remainingSeconds = totalSeconds
-        lastIntervalBell = totalSeconds
         meditationEndTime = Date().addingTimeInterval(TimeInterval(totalSeconds))
         timerState = .running
         
@@ -490,22 +507,13 @@ struct TimerView: View {
         }
     }
     
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-        timerState = .idle
-        remainingSeconds = 0
-        meditationEndTime = nil
-    }
-    
     private func completeTimer() {
         timer?.invalidate()
         timer = nil
         meditationEndTime = nil
         
         // Save the session
-        let session = MeditationSession(durationSeconds: initialDuration)
-        store.addSession(session)
+        saveSession(durationSeconds: initialDuration)
         
         // Play completion sound
         if settings.bellSound != .silence {
@@ -521,16 +529,51 @@ struct TimerView: View {
         withAnimation {
             timerState = .idle
         }
+        lastSavedDurationSeconds = 0
+        lastSavedStreak = 0
+        isSessionActive = false
+    }
+    
+    private func endSessionEarly(save: Bool) {
+        timer?.invalidate()
+        timer = nil
+        meditationEndTime = nil
+        
+        let elapsed = max(initialDuration - remainingSeconds, 0)
+        
+        if save, elapsed > 0 {
+            saveSession(durationSeconds: elapsed)
+            withAnimation {
+                timerState = .completed
+            }
+        } else {
+            timerState = .idle
+            isSessionActive = false
+        }
+        
+        remainingSeconds = 0
+    }
+    
+    private func saveSession(durationSeconds: Int) {
+        let session = MeditationSession(durationSeconds: durationSeconds)
+        store.addSession(session)
+        lastSavedDurationSeconds = durationSeconds
+        lastSavedStreak = store.currentStreak
     }
     
     private func formatTime(_ totalSeconds: Int) -> String {
         let h = totalSeconds / 3600
         let m = (totalSeconds % 3600) / 60
         let s = totalSeconds % 60
-        return String(format: "%02d:%02d:%02d", h, m, s)
+        
+        if h > 0 {
+            return String(format: "%02d:%02d:%02d", h, m, s)
+        } else {
+            return String(format: "%02d:%02d", m, s)
+        }
     }
 }
 
 #Preview {
-    TimerView(store: MeditationStore(), settings: TimerSettings())
+    TimerView(store: MeditationStore(), settings: TimerSettings(), isSessionActive: .constant(false))
 }
