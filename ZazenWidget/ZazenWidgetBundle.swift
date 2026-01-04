@@ -14,4 +14,3 @@ struct ZazenWidgetBundle: WidgetBundle {
         ZazenWidgetLiveActivity()
     }
 }
-
