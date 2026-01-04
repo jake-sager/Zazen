@@ -13,17 +13,11 @@ struct CylindricalPicker: View {
     let range: Range<Int>
     
     private let pickerHeight: CGFloat = 180
-    private let itemHeight: CGFloat = 56
     private let pickerWidth: CGFloat = 72
     private let wallWidth: CGFloat = 10
     
-    @State private var scrollOffset: CGFloat = 0
-    @State private var lastDragValue: CGFloat = 0
-    @State private var lastTickIndex: Int = 0
-    
     // Haptic feedback generator
     private let impactGenerator = UIImpactFeedbackGenerator(style: .light)
-    private let selectionGenerator = UISelectionFeedbackGenerator()
     
     private var values: [Int] { Array(range) }
     private var innerWidth: CGFloat { pickerWidth - wallWidth * 2 }
@@ -46,15 +40,9 @@ struct CylindricalPicker: View {
                 .padding(5)
         }
         .frame(width: pickerWidth + 20, height: pickerHeight + 10)
-        .contentShape(Rectangle())
-        .gesture(dragGesture)
         .onAppear {
-            let index = values.firstIndex(of: value) ?? 0
-            scrollOffset = -CGFloat(index) * itemHeight
-            lastTickIndex = index
             // Prepare haptic generators
             impactGenerator.prepare()
-            selectionGenerator.prepare()
         }
     }
     
@@ -66,72 +54,18 @@ struct CylindricalPicker: View {
             // Drum surface
             drumSurface
                 .padding(.horizontal, wallWidth)
+                .allowsHitTesting(false)
             
-            // Numbers - render fixed 5 slots
-            Canvas { context, size in
-                let centerY = size.height / 2
-                let currentFloat = -scrollOffset / itemHeight
-                let centerIndex = Int(round(currentFloat))
-                
-                // Render 5 items: center ± 2
-                for slot in -2...2 {
-                    let itemIndex = centerIndex + slot
-                    guard itemIndex >= 0 && itemIndex < values.count else { continue }
-                    
-                    let val = values[itemIndex]
-                    let itemOffset = scrollOffset + CGFloat(itemIndex) * itemHeight
-                    let normalizedDist = itemOffset / itemHeight
-                    let absDistance = abs(normalizedDist)
-                    
-                    // Skip if too far
-                    guard absDistance < 2 else { continue }
-                    
-                    let opacity = max(0, 1 - absDistance * 0.4)
-                    let scale = max(0.75, 1 - absDistance * 0.12)
-                    let isSelected = absDistance < 0.5
-                    
-                    // Calculate position with 3D-like effect
-                    let yPos = centerY + itemOffset
-                    let fontSize: CGFloat = isSelected ? 34 : 30
-                    
-                    // Draw number
-                    let text = String(format: "%02d", val)
-                    var textContext = context
-                    
-                    // Apply transforms
-                    let transform = CGAffineTransform(translationX: size.width / 2, y: yPos)
-                        .scaledBy(x: scale, y: scale)
-                    textContext.transform = transform
-                    
-                    // Resolve text
-                    let resolved = textContext.resolve(
-                        Text(text)
-                            .font(.system(size: fontSize, weight: isSelected ? .medium : .regular))
-                            .foregroundColor(isSelected ? Color.textPrimary : Color.textSecondary)
-                    )
-                    
-                    textContext.opacity = opacity
-                    textContext.draw(resolved, at: .zero)
-                    
-                    // Draw detent line
-                    if absDistance < 1.5 {
-                        let lineY = yPos - itemHeight / 2
-                        let linePath = Path { p in
-                            p.move(to: CGPoint(x: wallWidth, y: lineY))
-                            p.addLine(to: CGPoint(x: size.width - wallWidth, y: lineY))
-                        }
-                        context.stroke(linePath, with: .color(.black.opacity(0.08)), lineWidth: 1)
-                        
-                        // Center notch
-                        let notchPath = Path { p in
-                            p.move(to: CGPoint(x: size.width / 2, y: lineY))
-                            p.addLine(to: CGPoint(x: size.width / 2, y: lineY + 6))
-                        }
-                        context.stroke(notchPath, with: .color(.black.opacity(0.10)), lineWidth: 1)
-                    }
-                }
-            }
+            NativeWheelPicker(
+                value: $value,
+                values: values,
+                width: innerWidth,
+                height: pickerHeight,
+                onTick: triggerTickFeedback
+            )
+            // Make the native wheel hittable across the full visible picker width.
             .frame(width: pickerWidth, height: pickerHeight)
+            .contentShape(Rectangle())
             
             // Side walls
             HStack(spacing: 0) {
@@ -139,6 +73,7 @@ struct CylindricalPicker: View {
                 Spacer()
                 rightWall
             }
+            .allowsHitTesting(false)
             
             // Depth shadows
             VStack(spacing: 0) {
@@ -149,6 +84,7 @@ struct CylindricalPicker: View {
             .padding(.horizontal, wallWidth)
             .allowsHitTesting(false)
         }
+        .frame(width: pickerWidth, height: pickerHeight)
     }
     
     private var drumSurface: some View {
@@ -221,55 +157,125 @@ struct CylindricalPicker: View {
         .frame(height: 28)
     }
     
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 1)
-            .onChanged { gesture in
-                let delta = gesture.translation.height - lastDragValue
-                lastDragValue = gesture.translation.height
-                
-                let newOffset = scrollOffset + delta
-                let maxOffset: CGFloat = 0
-                let minOffset = -CGFloat(values.count - 1) * itemHeight
-                scrollOffset = max(minOffset, min(maxOffset, newOffset))
-                
-                // Check if we crossed a tick boundary
-                let currentIndex = Int(round(-scrollOffset / itemHeight))
-                if currentIndex != lastTickIndex {
-                    // Crossed a boundary - trigger feedback!
-                    triggerTickFeedback()
-                    lastTickIndex = currentIndex
-                }
-            }
-            .onEnded { gesture in
-                lastDragValue = 0
-                
-                let velocity = gesture.velocity.height
-                let projectedOffset = scrollOffset + velocity * 0.08
-                
-                let nearestIndex = Int(round(-projectedOffset / itemHeight))
-                let clampedIndex = max(0, min(values.count - 1, nearestIndex))
-                let targetOffset = -CGFloat(clampedIndex) * itemHeight
-                
-                // Final snap feedback
-                if clampedIndex != lastTickIndex {
-                    triggerTickFeedback()
-                    lastTickIndex = clampedIndex
-                }
-                
-                withAnimation(.interpolatingSpring(stiffness: 300, damping: 25)) {
-                    scrollOffset = targetOffset
-                }
-                
-                value = values[clampedIndex]
-            }
-    }
-    
     private func triggerTickFeedback() {
         // Haptic feedback
         impactGenerator.impactOccurred(intensity: 0.6)
         
         // Click sound
         SoundManager.shared.playTickSound()
+    }
+}
+
+private struct NativeWheelPicker: UIViewRepresentable {
+    @Binding var value: Int
+    let values: [Int]
+    let width: CGFloat
+    let height: CGFloat
+    let onTick: () -> Void
+    
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    
+    func makeUIView(context: Context) -> UIPickerView {
+        let picker = UIPickerView(frame: .zero)
+        picker.dataSource = context.coordinator
+        picker.delegate = context.coordinator
+        picker.backgroundColor = .clear
+        picker.setValue(UIColor.clear, forKey: "backgroundColor")
+        
+        // Initial selection (no tick)
+        let idx = values.firstIndex(of: value) ?? 0
+        context.coordinator.isProgrammaticSelection = true
+        picker.selectRow(idx, inComponent: 0, animated: false)
+        DispatchQueue.main.async {
+            context.coordinator.isProgrammaticSelection = false
+        }
+        
+        // Hide default separator lines so our custom drum styling reads cleanly
+        DispatchQueue.main.async {
+            context.coordinator.hideSeparators(in: picker)
+        }
+        
+        return picker
+    }
+    
+    func updateUIView(_ picker: UIPickerView, context: Context) {
+        let idx = values.firstIndex(of: value) ?? 0
+        if picker.selectedRow(inComponent: 0) != idx {
+            context.coordinator.isProgrammaticSelection = true
+            picker.selectRow(idx, inComponent: 0, animated: true)
+            picker.reloadAllComponents()
+            DispatchQueue.main.async {
+                context.coordinator.isProgrammaticSelection = false
+            }
+        }
+        
+        // UIPickerView sometimes re-adds/reshows separator views during layout updates.
+        DispatchQueue.main.async {
+            context.coordinator.hideSeparators(in: picker)
+        }
+    }
+    
+    final class Coordinator: NSObject, UIPickerViewDataSource, UIPickerViewDelegate {
+        private let parent: NativeWheelPicker
+        fileprivate var isProgrammaticSelection = false
+        
+        init(_ parent: NativeWheelPicker) {
+            self.parent = parent
+        }
+        
+        func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
+        
+        func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+            parent.values.count
+        }
+        
+        func pickerView(_ pickerView: UIPickerView, rowHeightForComponent component: Int) -> CGFloat {
+            56
+        }
+        
+        func pickerView(_ pickerView: UIPickerView, widthForComponent component: Int) -> CGFloat {
+            parent.width
+        }
+        
+        func pickerView(_ pickerView: UIPickerView, viewForRow row: Int, forComponent component: Int, reusing view: UIView?) -> UIView {
+            let label: UILabel
+            if let existing = view as? UILabel {
+                label = existing
+            } else {
+                label = UILabel()
+                label.textAlignment = .center
+                label.backgroundColor = .clear
+            }
+            
+            let selectedRow = pickerView.selectedRow(inComponent: 0)
+            let isSelected = row == selectedRow
+            
+            label.text = String(format: "%02d", parent.values[row])
+            label.font = UIFont.systemFont(ofSize: isSelected ? 34 : 30, weight: isSelected ? .medium : .regular)
+            label.textColor = UIColor(isSelected ? Color.textPrimary : Color.textSecondary)
+            label.alpha = isSelected ? 1.0 : 0.72
+            
+            return label
+        }
+        
+        func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+            guard row >= 0, row < parent.values.count else { return }
+            parent.value = parent.values[row]
+            
+            // Update label styles around the selection.
+            pickerView.reloadAllComponents()
+            
+            // Only tick for user-driven scrolling.
+            if !isProgrammaticSelection {
+                parent.onTick()
+            }
+        }
+        
+        fileprivate func hideSeparators(in pickerView: UIPickerView) {
+            for subview in pickerView.subviews where subview.frame.height <= 1.5 {
+                subview.isHidden = true
+            }
+        }
     }
 }
 
