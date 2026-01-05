@@ -288,8 +288,7 @@ struct TimerView: View {
         timer = nil
         meditationEndTime = nil
         
-        // Defensive cleanup: cancel any previously scheduled notifications from older builds.
-        NotificationManager.shared.cancelAllMeditationNotifications()
+        // No notifications are used for bells. Interval bells rely on background audio keep-alive.
         
         // End Live Activity
         Task { @MainActor in

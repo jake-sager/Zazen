@@ -19,19 +19,14 @@ final class SoundManager {
         .bowlC: "tibetan-singing-bowl-high"
     ]
 
-    // Notification-safe versions (without extension). These are separate files so we never
-    // need to modify your original audio assets, and so notification playback is reliable.
-    // (iOS notification sounds have strict format/duration requirements.)
-    private let notificationSoundFiles: [TimerSettings.BellSound: String] = [
-        .bowlA: "tibetan-singing-bowl-low-trimmed-notif",
-        .bowlB: "tibetan-singing-bowl-struck-med-trimmed-notif",
-        .bowlC: "tibetan-singing-bowl-high-notif"
-    ]
-    
     private let tickSoundFile = "volvo-signal-cleaned"
 
-    // A short silent audio file used to keep the app alive in the background during a session
-    // (so interval bells can play on the lock screen without using notifications).
+    // A short silent audio file used to keep the app alive in the background during a session.
+    //
+    // Why: When the screen locks, iOS will typically suspend the app unless it has an active
+    // background mode. We want interval bells to play while locked WITHOUT showing notifications
+    // (no banners/badges). By running a near-silent audio loop using the `audio` background mode,
+    // the app keeps running and can play the interval bells normally.
     private let silentLoopFile = "silence-1s"
     
     // Track active players so we can stop them
@@ -54,7 +49,7 @@ final class SoundManager {
             )
             try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            print("Background audio session error: \(error)")
+            // Intentionally ignore. If audio session fails, we just won't get background bells.
         }
     }
 
@@ -65,12 +60,11 @@ final class SoundManager {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("Error activating audio session for keep-alive: \(error)")
+            // Intentionally ignore. If this fails, interval bells may not work on lock screen.
         }
 
         guard backgroundKeepAlivePlayer == nil else { return }
         guard let url = Bundle.main.url(forResource: silentLoopFile, withExtension: "wav") else {
-            print("Keep-alive silent audio not found: \(silentLoopFile).wav")
             return
         }
 
@@ -83,7 +77,7 @@ final class SoundManager {
             player.play()
             backgroundKeepAlivePlayer = player
         } catch {
-            print("Error starting keep-alive audio: \(error)")
+            // Intentionally ignore.
         }
     }
 
@@ -99,7 +93,9 @@ final class SoundManager {
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
-            print("Error deactivating audio session: \(error)")
+            // This can fail intermittently when debugging or when other audio is changing state.
+            // Best-effort: retry without options; ignore if it still fails.
+            try? AVAudioSession.sharedInstance().setActive(false, options: [])
         }
     }
     
@@ -150,29 +146,18 @@ final class SoundManager {
                Bundle.main.url(forResource: fileName, withExtension: "mp3")
     }
     
-    /// Get the file name for a bell sound (for notifications)
-    func notificationSoundFileName(for sound: TimerSettings.BellSound) -> String? {
-        guard sound != .silence else { return nil }
-        let baseName = notificationSoundFiles[sound] ?? soundFiles[sound]
-        guard let baseName else { return nil }
-        return "\(baseName).wav"
-    }
-    
     private func playBell(sound: TimerSettings.BellSound, softer: Bool) {
         // Ensure audio session is active
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("Audio session error: \(error)")
             return
         }
         
         // Play bundled sound
         if let url = soundFileURL(for: sound) {
             playFromURL(url, volume: softer ? 0.5 : 1.0)
-        } else {
-            print("Sound file not found for: \(sound)")
         }
     }
     
@@ -198,7 +183,7 @@ final class SoundManager {
             
             keepAlive(player: player, for: duration)
         } catch {
-            print("Error playing sound from \(url): \(error)")
+            // Intentionally ignore.
         }
     }
     

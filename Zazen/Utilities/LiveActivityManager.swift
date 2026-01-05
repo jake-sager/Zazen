@@ -21,15 +21,9 @@ final class LiveActivityManager {
     
     /// Start a new Live Activity for a meditation session
     func startActivity(totalDuration: Int) {
-        print("🧘 LiveActivityManager: startActivity called with duration \(totalDuration)")
-        
         // Check if Live Activities are supported
         let authInfo = ActivityAuthorizationInfo()
-        print("🧘 Live Activities enabled: \(authInfo.areActivitiesEnabled)")
-        print("🧘 Frequent push enabled: \(authInfo.frequentPushesEnabled)")
-        
         guard authInfo.areActivitiesEnabled else {
-            print("🧘 ERROR: Live Activities are not enabled - check Settings → Zazen → Live Activities")
             return
         }
         
@@ -54,9 +48,8 @@ final class LiveActivityManager {
                 pushType: nil
             )
             currentActivity = activity
-            print("🧘 SUCCESS: Started Live Activity with ID: \(activity.id)")
         } catch {
-            print("🧘 ERROR starting Live Activity: \(error)")
+            // Intentionally ignore.
         }
     }
     
