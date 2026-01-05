@@ -18,12 +18,28 @@ final class SoundManager {
         .bowlB: "tibetan-singing-bowl-struck-med-trimmed",
         .bowlC: "tibetan-singing-bowl-high"
     ]
+
+    // Notification-safe versions (without extension). These are separate files so we never
+    // need to modify your original audio assets, and so notification playback is reliable.
+    // (iOS notification sounds have strict format/duration requirements.)
+    private let notificationSoundFiles: [TimerSettings.BellSound: String] = [
+        .bowlA: "tibetan-singing-bowl-low-trimmed-notif",
+        .bowlB: "tibetan-singing-bowl-struck-med-trimmed-notif",
+        .bowlC: "tibetan-singing-bowl-high-notif"
+    ]
     
     private let tickSoundFile = "volvo-signal-cleaned"
+
+    // A short silent audio file used to keep the app alive in the background during a session
+    // (so interval bells can play on the lock screen without using notifications).
+    private let silentLoopFile = "silence-1s"
     
     // Track active players so we can stop them
     private var activePlayers: [AVAudioPlayer] = []
     private let playerQueue = DispatchQueue(label: "com.zazen.soundmanager")
+
+    // Background keep-alive player (loops silence)
+    private var backgroundKeepAlivePlayer: AVAudioPlayer?
     
     private init() {}
     
@@ -41,9 +57,45 @@ final class SoundManager {
             print("Background audio session error: \(error)")
         }
     }
+
+    /// Start looping silent audio to keep the app alive in the background during an active session.
+    /// This avoids using local notifications (no banners), while still allowing interval bells to play.
+    func startBackgroundKeepAliveAudio() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("Error activating audio session for keep-alive: \(error)")
+        }
+
+        guard backgroundKeepAlivePlayer == nil else { return }
+        guard let url = Bundle.main.url(forResource: silentLoopFile, withExtension: "wav") else {
+            print("Keep-alive silent audio not found: \(silentLoopFile).wav")
+            return
+        }
+
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            // Non-zero but effectively inaudible. Some devices may not keep a 0-volume player active.
+            player.volume = 0.001
+            player.numberOfLoops = -1
+            player.prepareToPlay()
+            player.play()
+            backgroundKeepAlivePlayer = player
+        } catch {
+            print("Error starting keep-alive audio: \(error)")
+        }
+    }
+
+    /// Stop the silent keep-alive loop.
+    func stopBackgroundKeepAliveAudio() {
+        backgroundKeepAlivePlayer?.stop()
+        backgroundKeepAlivePlayer = nil
+    }
     
     /// Deactivate audio session when meditation is done
     func deactivateAudioSession() {
+        stopBackgroundKeepAliveAudio()
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
@@ -53,6 +105,7 @@ final class SoundManager {
     
     /// Stop all currently playing sounds
     func stopAllSounds() {
+        stopBackgroundKeepAliveAudio()
         playerQueue.sync {
             for player in activePlayers {
                 player.stop()
@@ -98,9 +151,10 @@ final class SoundManager {
     }
     
     /// Get the file name for a bell sound (for notifications)
-    func soundFileName(for sound: TimerSettings.BellSound) -> String? {
-        guard let baseName = soundFiles[sound] else { return nil }
-        // Return with .wav extension for notification sounds
+    func notificationSoundFileName(for sound: TimerSettings.BellSound) -> String? {
+        guard sound != .silence else { return nil }
+        let baseName = notificationSoundFiles[sound] ?? soundFiles[sound]
+        guard let baseName else { return nil }
         return "\(baseName).wav"
     }
     

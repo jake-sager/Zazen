@@ -26,11 +26,12 @@ final class NotificationManager {
     /// Request notification permission (sound only - no alerts or badges)
     func requestAuthorization() async -> Bool {
         do {
-            // Only request sound - we don't want banners or badges
+            // Request sound permission - we need this for bells to play
             let granted = try await notificationCenter.requestAuthorization(options: [.sound])
+            print("🔔 Notification authorization granted: \(granted)")
             return granted
         } catch {
-            print("Notification authorization error: \(error)")
+            print("🔔 Notification authorization error: \(error)")
             return false
         }
     }
@@ -50,8 +51,11 @@ final class NotificationManager {
         intervalMinutes: Int,
         intervalBellSound: TimerSettings.BellSound
     ) {
-        // Cancel any existing meditation notifications first
-        cancelAllMeditationNotifications()
+        // Clear any pending notifications first (avoids async race conditions).
+        notificationCenter.removeAllPendingNotificationRequests()
+        notificationCenter.removeAllDeliveredNotifications()
+        
+        print("🔔 Scheduling notifications - duration: \(duration)s, interval: \(intervalMinutes)min")
         
         // Schedule completion notification
         if bellSound != .silence {
@@ -74,16 +78,13 @@ final class NotificationManager {
         // No title or body = no visible banner
         content.categoryIdentifier = "MEDITATION_COMPLETE"
         
-        // Set interruption level to passive so it doesn't interrupt
-        if #available(iOS 15.0, *) {
-            content.interruptionLevel = .passive
-        }
-        
         // Set the custom sound
-        if let soundName = SoundManager.shared.soundFileName(for: sound) {
+        if let soundName = SoundManager.shared.notificationSoundFileName(for: sound) {
             content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: soundName))
+            print("🔔 Completion notification sound: \(soundName)")
         } else {
             content.sound = .default
+            print("🔔 Completion notification using default sound")
         }
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(seconds, 1), repeats: false)
@@ -95,7 +96,9 @@ final class NotificationManager {
         
         notificationCenter.add(request) { error in
             if let error = error {
-                print("Error scheduling completion notification: \(error)")
+                print("🔔 Error scheduling completion notification: \(error)")
+            } else {
+                print("🔔 Scheduled completion notification in \(seconds)s")
             }
         }
     }
@@ -110,18 +113,15 @@ final class NotificationManager {
         var currentTime = intervalSeconds
         var intervalIndex = 0
         
+        print("🔔 Scheduling interval notifications every \(intervalMinutes) min for \(totalDuration)s total")
+        
         while currentTime < totalDuration {
             let content = UNMutableNotificationContent()
             // No title or body = no visible banner
             content.categoryIdentifier = "MEDITATION_INTERVAL"
             
-            // Set interruption level to passive so it doesn't interrupt
-            if #available(iOS 15.0, *) {
-                content.interruptionLevel = .passive
-            }
-            
             // Set the custom sound
-            if let soundName = SoundManager.shared.soundFileName(for: sound) {
+            if let soundName = SoundManager.shared.notificationSoundFileName(for: sound) {
                 content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: soundName))
             } else {
                 content.sound = .default
@@ -136,13 +136,17 @@ final class NotificationManager {
             
             notificationCenter.add(request) { error in
                 if let error = error {
-                    print("Error scheduling interval notification: \(error)")
+                    print("🔔 Error scheduling interval notification \(intervalIndex): \(error)")
+                } else {
+                    print("🔔 Scheduled interval notification \(intervalIndex) at \(currentTime)s")
                 }
             }
             
             currentTime += intervalSeconds
             intervalIndex += 1
         }
+        
+        print("🔔 Total interval notifications scheduled: \(intervalIndex)")
     }
     
     // MARK: - Cancellation
@@ -156,6 +160,10 @@ final class NotificationManager {
             let meditationIds = requests
                 .map { $0.identifier }
                 .filter { $0 == self.completionNotificationId || $0.hasPrefix(self.intervalNotificationPrefix) }
+            
+            if !meditationIds.isEmpty {
+                print("🔔 Cancelling \(meditationIds.count) meditation notifications")
+            }
             
             self.notificationCenter.removePendingNotificationRequests(withIdentifiers: meditationIds)
         }

@@ -176,11 +176,19 @@ private struct NativeWheelPicker: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     
     func makeUIView(context: Context) -> UIPickerView {
-        let picker = UIPickerView(frame: .zero)
+        let picker = ZazenPickerView(frame: .zero)
         picker.dataSource = context.coordinator
         picker.delegate = context.coordinator
         picker.backgroundColor = .clear
         picker.setValue(UIColor.clear, forKey: "backgroundColor")
+
+        // When the picker is attached to a window, force a reload. This avoids rare cases
+        // where row views come up blank after view transitions.
+        picker.onAttachToWindow = { [weak picker] in
+            DispatchQueue.main.async {
+                picker?.reloadAllComponents()
+            }
+        }
         
         // Initial selection (no tick)
         let idx = values.firstIndex(of: value) ?? 0
@@ -190,34 +198,33 @@ private struct NativeWheelPicker: UIViewRepresentable {
             context.coordinator.isProgrammaticSelection = false
         }
         
-        // Hide default separator lines so our custom drum styling reads cleanly
-        DispatchQueue.main.async {
-            context.coordinator.hideSeparators(in: picker)
-        }
-        
         return picker
     }
     
     func updateUIView(_ picker: UIPickerView, context: Context) {
         let idx = values.firstIndex(of: value) ?? 0
+
         if picker.selectedRow(inComponent: 0) != idx {
             context.coordinator.isProgrammaticSelection = true
-            picker.selectRow(idx, inComponent: 0, animated: true)
+            picker.selectRow(idx, inComponent: 0, animated: false)
             picker.reloadAllComponents()
             DispatchQueue.main.async {
                 context.coordinator.isProgrammaticSelection = false
             }
-        }
-        
-        // UIPickerView sometimes re-adds/reshows separator views during layout updates.
-        DispatchQueue.main.async {
-            context.coordinator.hideSeparators(in: picker)
+        } else {
+            // Still reload occasionally to keep row views healthy during transitions.
+            picker.reloadAllComponents()
         }
     }
     
     final class Coordinator: NSObject, UIPickerViewDataSource, UIPickerViewDelegate {
         private let parent: NativeWheelPicker
         fileprivate var isProgrammaticSelection = false
+        
+        // Use explicit UIColors here (instead of UIColor(Color...)) to avoid rare cases
+        // where SwiftUI color bridging results in invisible picker labels after view transitions.
+        private let selectedTextColor = UIColor(red: 0.22, green: 0.21, blue: 0.20, alpha: 1.0)
+        private let unselectedTextColor = UIColor(red: 0.45, green: 0.43, blue: 0.40, alpha: 1.0)
         
         init(_ parent: NativeWheelPicker) {
             self.parent = parent
@@ -252,7 +259,7 @@ private struct NativeWheelPicker: UIViewRepresentable {
             
             label.text = String(format: "%02d", parent.values[row])
             label.font = UIFont.systemFont(ofSize: isSelected ? 34 : 30, weight: isSelected ? .medium : .regular)
-            label.textColor = UIColor(isSelected ? Color.textPrimary : Color.textSecondary)
+            label.textColor = isSelected ? selectedTextColor : unselectedTextColor
             label.alpha = isSelected ? 1.0 : 0.72
             
             return label
@@ -270,11 +277,28 @@ private struct NativeWheelPicker: UIViewRepresentable {
                 parent.onTick()
             }
         }
+    }
+}
+
+/// UIPickerView subclass that hides separator lines safely (without accidentally hiding row views).
+private final class ZazenPickerView: UIPickerView {
+    var onAttachToWindow: (() -> Void)?
+    
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            onAttachToWindow?()
+        }
+    }
+    
+    override func layoutSubviews() {
+        super.layoutSubviews()
         
-        fileprivate func hideSeparators(in pickerView: UIPickerView) {
-            for subview in pickerView.subviews where subview.frame.height <= 1.5 {
-                subview.isHidden = true
-            }
+        // First, ensure any previously-hidden non-separator views are visible again.
+        for subview in subviews {
+            let h = subview.bounds.height
+            let isSeparator = h > 0 && h <= 1.5
+            subview.isHidden = isSeparator
         }
     }
 }

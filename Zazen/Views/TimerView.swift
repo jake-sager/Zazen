@@ -97,11 +97,6 @@ struct TimerView: View {
         .onAppear {
             // Keep screen on during meditation
             UIApplication.shared.isIdleTimerDisabled = timerState == .running || timerState == .overtime
-            
-            // Request notification permission on first appearance
-            Task {
-                await NotificationManager.shared.requestAuthorization()
-            }
         }
         .onDisappear {
             // Stop any playing sounds when leaving the view
@@ -162,12 +157,16 @@ struct TimerView: View {
     
     // MARK: - Picker View
     
+    // Track picker refresh to force UIPickerView recreation after returning from meditation
+    @State private var pickerRefreshID = UUID()
+    
     private var pickerView: some View {
         HStack(spacing: 4) {
             // Hours
             VStack(spacing: 6) {
                 CylindricalPicker(value: $settings.hours, range: 0..<24)
                     .onChange(of: settings.hours) { _, _ in settings.save() }
+                    .id("hours-\(pickerRefreshID)")
                 Text("H")
                     .font(.system(size: 11, weight: .medium))
                     .tracking(1.32)
@@ -180,6 +179,7 @@ struct TimerView: View {
             VStack(spacing: 6) {
                 CylindricalPicker(value: $settings.minutes, range: 0..<60)
                     .onChange(of: settings.minutes) { _, _ in settings.save() }
+                    .id("minutes-\(pickerRefreshID)")
                 Text("M")
                     .font(.system(size: 11, weight: .medium))
                     .tracking(1.32)
@@ -192,6 +192,7 @@ struct TimerView: View {
             VStack(spacing: 6) {
                 CylindricalPicker(value: $settings.seconds, range: 0..<60)
                     .onChange(of: settings.seconds) { _, _ in settings.save() }
+                    .id("seconds-\(pickerRefreshID)")
                 Text("S")
                     .font(.system(size: 11, weight: .medium))
                     .tracking(1.32)
@@ -287,7 +288,7 @@ struct TimerView: View {
         timer = nil
         meditationEndTime = nil
         
-        // Cancel all scheduled notifications
+        // Defensive cleanup: cancel any previously scheduled notifications from older builds.
         NotificationManager.shared.cancelAllMeditationNotifications()
         
         // End Live Activity
@@ -300,6 +301,9 @@ struct TimerView: View {
         remainingSeconds = 0
         overtimeSeconds = 0
         SoundManager.shared.deactivateAudioSession()
+        
+        // Force picker refresh to fix UIPickerView rendering issue
+        pickerRefreshID = UUID()
     }
     
     // MARK: - Settings View
@@ -584,14 +588,9 @@ struct TimerView: View {
         
         // Configure audio session for background playback
         SoundManager.shared.configureForBackgroundPlayback()
-        
-        // Schedule notifications for background sounds
-        NotificationManager.shared.scheduleMeditationNotifications(
-            duration: TimeInterval(totalSeconds),
-            bellSound: settings.bellSound,
-            intervalMinutes: settings.intervalMinutes,
-            intervalBellSound: settings.intervalBellSound
-        )
+        // Keep the app alive in the background (silent loop) so interval bells can play
+        // on the lock screen without using notifications (no banners).
+        SoundManager.shared.startBackgroundKeepAliveAudio()
         
         // Start Live Activity
         Task { @MainActor in
@@ -602,11 +601,6 @@ struct TimerView: View {
             if remainingSeconds > 1 {
                 remainingSeconds -= 1
                 checkIntervalBell()
-                
-                // Update Live Activity
-                Task { @MainActor in
-                    LiveActivityManager.shared.updateActivity(remainingSeconds: remainingSeconds)
-                }
             } else {
                 // Timer is done, transition to overtime
                 transitionToOvertime()
@@ -625,7 +619,6 @@ struct TimerView: View {
         let elapsed = initialDuration - remainingSeconds
         
         // Check if we've passed an interval boundary
-        // Only play if app is in foreground (notifications handle background)
         if elapsed > 0 && elapsed % intervalSeconds == 0 && elapsed != initialDuration {
             SoundManager.shared.playBellSound(settings.intervalBellSound, softer: true)
         }
@@ -653,11 +646,6 @@ struct TimerView: View {
         // Start overtime timer
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             overtimeSeconds += 1
-            
-            // Update Live Activity with overtime
-            Task { @MainActor in
-                LiveActivityManager.shared.transitionToOvertime(overtimeSeconds: overtimeSeconds)
-            }
         }
         RunLoop.current.add(timer!, forMode: .common)
     }
@@ -665,9 +653,6 @@ struct TimerView: View {
     private func finishOvertime(includeOvertime: Bool) {
         timer?.invalidate()
         timer = nil
-        
-        // Cancel any remaining notifications
-        NotificationManager.shared.cancelAllMeditationNotifications()
         
         // End Live Activity
         Task { @MainActor in
@@ -689,9 +674,6 @@ struct TimerView: View {
         timer?.invalidate()
         timer = nil
         meditationEndTime = nil
-        
-        // Cancel any remaining notifications
-        NotificationManager.shared.cancelAllMeditationNotifications()
         
         // Save the session
         saveSession(durationSeconds: initialDuration)
@@ -717,15 +699,15 @@ struct TimerView: View {
         
         // Deactivate audio session
         SoundManager.shared.deactivateAudioSession()
+        
+        // Force picker refresh to fix UIPickerView rendering issue
+        pickerRefreshID = UUID()
     }
     
     private func endSessionEarly(save: Bool) {
         timer?.invalidate()
         timer = nil
         meditationEndTime = nil
-        
-        // Cancel all scheduled notifications
-        NotificationManager.shared.cancelAllMeditationNotifications()
         
         // End Live Activity
         Task { @MainActor in
@@ -743,6 +725,8 @@ struct TimerView: View {
             timerState = .idle
             isSessionActive = false
             SoundManager.shared.deactivateAudioSession()
+            // Force picker refresh to fix UIPickerView rendering issue
+            pickerRefreshID = UUID()
         }
         
         remainingSeconds = 0
