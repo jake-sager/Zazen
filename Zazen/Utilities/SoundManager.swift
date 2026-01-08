@@ -36,6 +36,9 @@ final class SoundManager {
     // Background keep-alive player (loops silence)
     private var backgroundKeepAlivePlayer: AVAudioPlayer?
     
+    // Cached tick player to keep dial snapping responsive.
+    private var tickPlayer: AVAudioPlayer?
+    
     private init() {}
     
     /// Configure audio session for background playback (call when starting meditation)
@@ -102,6 +105,7 @@ final class SoundManager {
     /// Stop all currently playing sounds
     func stopAllSounds() {
         stopBackgroundKeepAliveAudio()
+        tickPlayer?.stop()
         playerQueue.sync {
             for player in activePlayers {
                 player.stop()
@@ -117,11 +121,21 @@ final class SoundManager {
     
     /// Plays a tick sound for picker scrolling
     func playTickSound() {
-        // Try bundled sound first
-        if let url = Bundle.main.url(forResource: tickSoundFile, withExtension: "wav") ??
-                     Bundle.main.url(forResource: tickSoundFile, withExtension: "caf") ??
-                     Bundle.main.url(forResource: tickSoundFile, withExtension: "m4a") {
-            playFromURL(url, volume: 0.3)
+        // Create the player once and reuse it (creating AVAudioPlayer repeatedly on the main thread
+        // can cause noticeable UI stutter when the dial snaps quickly).
+        if tickPlayer == nil {
+            if let url = Bundle.main.url(forResource: tickSoundFile, withExtension: "wav") ??
+                         Bundle.main.url(forResource: tickSoundFile, withExtension: "caf") ??
+                         Bundle.main.url(forResource: tickSoundFile, withExtension: "m4a") {
+                tickPlayer = try? AVAudioPlayer(contentsOf: url)
+                tickPlayer?.volume = 0.3
+                tickPlayer?.prepareToPlay()
+            }
+        }
+        
+        if let player = tickPlayer {
+            player.currentTime = 0
+            player.play()
         } else {
             // Fallback to system sound
             AudioServicesPlaySystemSound(1157)

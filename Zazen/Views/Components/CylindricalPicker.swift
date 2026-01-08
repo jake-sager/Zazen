@@ -8,6 +8,7 @@
 import SwiftUI
 import UIKit
 
+@available(*, deprecated, message: "Replaced by CircularTimeDial.")
 struct CylindricalPicker: View {
     @Binding var value: Int
     let range: Range<Int>

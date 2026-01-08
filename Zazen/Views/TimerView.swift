@@ -49,26 +49,13 @@ struct TimerView: View {
             
             // Main content
             if timerState == .idle {
-                VStack(spacing: 24) {
-                    // Picker
-                    pickerView
-                        .padding(.top, 40)
-                    
-                    // Settings
-                    settingsView
-                    
-                    Spacer()
-                    
-                    // Fixed START button at bottom
-                    Button(action: startTimer) {
-                        Text("START")
+                ViewThatFits(in: .vertical) {
+                    idleContent(dialMaxWidth: 300, topPadding: 28, spacing: 24)
+                    idleContent(dialMaxWidth: 280, topPadding: 22, spacing: 20)
+                    ScrollView(showsIndicators: false) {
+                        idleContent(dialMaxWidth: 280, topPadding: 22, spacing: 20)
                     }
-                    .buttonStyle(NeumorphicButtonStyle())
-                    .disabled(settings.hours == 0 && settings.minutes == 0 && settings.seconds == 0)
-                    .opacity(settings.hours == 0 && settings.minutes == 0 && settings.seconds == 0 ? 0.35 : 1)
-                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 24)
             } else if timerState == .running {
                 runningView
                     .onTapGesture {
@@ -116,6 +103,9 @@ struct TimerView: View {
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
         }
+        .onChange(of: settings.maxTimerMinutes) { _, newMax in
+            clampTimerSelection(toMaxMinutes: newMax)
+        }
     }
     
     // MARK: - Background/Foreground Handling
@@ -160,7 +150,8 @@ struct TimerView: View {
     // Track picker refresh to force UIPickerView recreation after returning from meditation
     @State private var pickerRefreshID = UUID()
     
-    private var pickerView: some View {
+    @available(*, deprecated, message: "Replaced by CircularTimeDial.")
+    private var legacyPickerView: some View {
         HStack(spacing: 4) {
             // Hours
             VStack(spacing: 6) {
@@ -173,7 +164,7 @@ struct TimerView: View {
                     .foregroundColor(Color.textMuted)
             }
             
-            colonSeparator
+            legacyColonSeparator
             
             // Minutes
             VStack(spacing: 6) {
@@ -186,7 +177,7 @@ struct TimerView: View {
                     .foregroundColor(Color.textMuted)
             }
             
-            colonSeparator
+            legacyColonSeparator
             
             // Seconds
             VStack(spacing: 6) {
@@ -199,6 +190,63 @@ struct TimerView: View {
                     .foregroundColor(Color.textMuted)
             }
         }
+    }
+
+    // MARK: - Time Dial
+
+    private var selectedTotalSeconds: Int {
+        settings.hours * 3600 + settings.minutes * 60 + settings.seconds
+    }
+
+    private var selectedTotalMinutes: Int {
+        settings.hours * 60 + settings.minutes + (settings.seconds > 0 ? 1 : 0)
+    }
+
+    private var totalMinutesBinding: Binding<Int> {
+        Binding(
+            get: { selectedTotalMinutes },
+            set: { newTotalMinutes in
+                setTimerSelection(totalMinutes: newTotalMinutes, save: false)
+            }
+        )
+    }
+
+    private var timeDialView: some View {
+        timeDialView(maxWidth: 300)
+    }
+
+    private func timeDialView(maxWidth: CGFloat) -> some View {
+        CircularTimeDial(
+            totalMinutes: totalMinutesBinding,
+            maxMinutes: settings.maxTimerMinutes,
+            onEditingChanged: { isEditing in
+                if !isEditing {
+                    settings.save()
+                }
+            }
+        )
+        .frame(maxWidth: maxWidth)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 4)
+    }
+
+    private func idleContent(dialMaxWidth: CGFloat, topPadding: CGFloat, spacing: CGFloat) -> some View {
+        VStack(spacing: spacing) {
+            timeDialView(maxWidth: dialMaxWidth)
+                .padding(.top, topPadding)
+
+            settingsView
+
+            Button(action: startTimer) {
+                Text("START")
+            }
+            .buttonStyle(NeumorphicButtonStyle())
+            .disabled(selectedTotalSeconds == 0)
+            .opacity(selectedTotalSeconds == 0 ? 0.35 : 1)
+            .padding(.top, 6)
+            .padding(.bottom, 24)
+        }
+        .padding(.horizontal, 24)
     }
     
     // MARK: - Running View
@@ -522,7 +570,8 @@ struct TimerView: View {
     
     // MARK: - Colon Separator
     
-    private var colonSeparator: some View {
+    @available(*, deprecated, message: "Used only by the legacy 3-wheel time picker.")
+    private var legacyColonSeparator: some View {
         VStack(spacing: 10) {
             Circle()
                 .fill(Color.neumorphicCard)
@@ -539,6 +588,23 @@ struct TimerView: View {
         .frame(height: 180)
         .padding(.horizontal, 6)
         .offset(y: -12)
+    }
+
+    private func setTimerSelection(totalMinutes: Int, save: Bool) {
+        let clamped = min(max(totalMinutes, 0), max(settings.maxTimerMinutes, 60))
+        settings.hours = clamped / 60
+        settings.minutes = clamped % 60
+        settings.seconds = 0
+        if save {
+            settings.save()
+        }
+    }
+
+    private func clampTimerSelection(toMaxMinutes maxMinutes: Int) {
+        let effectiveMax = max(60, maxMinutes)
+        if selectedTotalMinutes > effectiveMax {
+            setTimerSelection(totalMinutes: effectiveMax, save: true)
+        }
     }
     
     // MARK: - Screen Dimming

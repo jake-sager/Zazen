@@ -16,6 +16,7 @@ struct ContentView: View {
     enum Tab {
         case timer
         case stats
+        case settings
     }
     
     var body: some View {
@@ -27,6 +28,9 @@ struct ContentView: View {
                 
                 if selectedTab == .timer {
                     TimerView(store: store, settings: timerSettings, isSessionActive: $isSessionActive)
+                        .transition(.opacity)
+                } else if selectedTab == .settings {
+                    SettingsView(timerSettings: timerSettings)
                         .transition(.opacity)
                 } else {
                     StatsView(store: store)
@@ -62,10 +66,18 @@ struct ContentView: View {
             ) {
                 selectedTab = .stats
             }
+
+            tabButton(
+                icon: "gearshape.fill",
+                label: "Settings",
+                isSelected: selectedTab == .settings
+            ) {
+                selectedTab = .settings
+            }
         }
-        .padding(.horizontal, 40)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 28)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
         .background(
             Color.neumorphicCard
                 .shadow(color: Color.shadowDark.opacity(0.3), radius: 8, x: 0, y: -4)
@@ -81,15 +93,16 @@ struct ContentView: View {
         }) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 22))
+                    .font(.system(size: 20))
                     .foregroundColor(isSelected ? Color.textPrimary : Color.textMuted)
                 
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundColor(isSelected ? Color.textPrimary : Color.textMuted)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
         }
     }
 }
