@@ -18,10 +18,11 @@ struct CircularTimeDial: View {
     /// Called when the user starts/stops interacting with the dial.
     var onEditingChanged: ((Bool) -> Void)?
 
+    @GestureState private var dragLocation: CGPoint?
     @State private var isDragging: Bool = false
     @State private var lastSnappedMinutes: Int?
 
-    private let impactGenerator = UIImpactFeedbackGenerator(style: .light)
+    private let selectionGenerator = UISelectionFeedbackGenerator()
 
     private var clampedMaxMinutes: Int { max(1, maxMinutes) }
 
@@ -33,9 +34,9 @@ struct CircularTimeDial: View {
         Double(clampedMinutes) / Double(clampedMaxMinutes)
     }
 
-    private var formattedTime: String {
-        let hours = clampedMinutes / 60
-        let minutes = clampedMinutes % 60
+    private func formattedTime(minutes totalMinutes: Int) -> String {
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
         return String(format: "%02d:%02d", hours, minutes)
     }
 
@@ -50,6 +51,8 @@ struct CircularTimeDial: View {
             let handleWidth = max(handleHeight * 2.0, side * 0.14)
             let ring = Circle().inset(by: lineWidth / 2)
             let timeFontSize = max(38, side * 0.18)
+            let displayMinutes = dragLocation.map { snapMinutes(for: $0, in: proxy.size) } ?? clampedMinutes
+            let displayProgress = Double(displayMinutes) / Double(clampedMaxMinutes)
 
             ZStack {
                 // Base ring
@@ -63,7 +66,7 @@ struct CircularTimeDial: View {
 
                 // Accent ring (progress)
                 ring
-                    .trim(from: 0, to: CGFloat(progress))
+                    .trim(from: 0, to: CGFloat(displayProgress))
                     .stroke(
                         LinearGradient(
                             colors: [Color.accentSecondary.opacity(0.95), Color.accentPrimary.opacity(0.95)],
@@ -76,7 +79,7 @@ struct CircularTimeDial: View {
 
                 // Center time
                 VStack(spacing: max(8, timeFontSize * 0.12)) {
-                    TabularTimerText(text: formattedTime, fontSize: timeFontSize)
+                    TabularTimerText(text: formattedTime(minutes: displayMinutes), fontSize: timeFontSize)
 
                     unitsRow(timeFontSize: timeFontSize)
                 }
@@ -84,35 +87,38 @@ struct CircularTimeDial: View {
                 // Handle
                 DialHandle(height: handleHeight)
                     .frame(width: handleWidth, height: handleHeight)
-                    .rotationEffect(.radians(handleRotation(progress: progress)))
-                    .position(handlePosition(center: center, radius: handleRadius, progress: progress))
+                    .rotationEffect(.radians(handleRotation(progress: displayProgress)))
+                    .position(handlePosition(center: center, radius: handleRadius, progress: displayProgress))
+            }
+            .onChange(of: displayMinutes) { _, newValue in
+                tickIfNeeded(newValue)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Circle())
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($dragLocation) { value, state, _ in
+                        state = value.location
+                    }
                     .onChanged { value in
                         if !isDragging {
                             isDragging = true
-                            lastSnappedMinutes = clampedMinutes
-                            impactGenerator.prepare()
+                            lastSnappedMinutes = snapMinutes(for: value.location, in: proxy.size)
+                            selectionGenerator.prepare()
                             onEditingChanged?(true)
                         }
-
-                        let snapped = snapMinutes(for: value.location, in: proxy.size)
-                        guard snapped != totalMinutes else { return }
-                        totalMinutes = snapped
-                        tickIfNeeded(snapped)
                     }
-                    .onEnded { _ in
+                    .onEnded { value in
                         isDragging = false
-                        impactGenerator.prepare()
+                        lastSnappedMinutes = nil
+                        selectionGenerator.prepare()
+                        totalMinutes = snapMinutes(for: value.location, in: proxy.size)
                         onEditingChanged?(false)
                     }
             )
             .onAppear {
                 lastSnappedMinutes = clampedMinutes
-                impactGenerator.prepare()
+                selectionGenerator.prepare()
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -120,10 +126,14 @@ struct CircularTimeDial: View {
 
     private func tickIfNeeded(_ minutes: Int) {
         guard isDragging else { return }
+        if lastSnappedMinutes == nil {
+            lastSnappedMinutes = minutes
+            return
+        }
         guard lastSnappedMinutes != minutes else { return }
         lastSnappedMinutes = minutes
 
-        impactGenerator.impactOccurred(intensity: 0.6)
+        selectionGenerator.selectionChanged()
         SoundManager.shared.playTickSound()
         onSnap?(minutes)
     }
