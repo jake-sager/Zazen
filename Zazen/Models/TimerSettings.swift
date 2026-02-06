@@ -18,6 +18,8 @@ class TimerSettings: ObservableObject, Codable {
     @Published var bellSound: BellSound = .bowlB
     @Published var intervalMinutes: Int = 0  // 0 means disabled
     @Published var intervalBellSound: BellSound = .bowlB
+    @Published var startDelaySeconds: Int = 0  // 0-60, countdown before meditation begins
+    @Published var playStartingBell: Bool = true
     
     private static let saveKey = "timer_settings"
     
@@ -34,6 +36,7 @@ class TimerSettings: ObservableObject, Codable {
     
     enum CodingKeys: String, CodingKey {
         case hours, minutes, seconds, maxTimerMinutes, bellSound, intervalMinutes, intervalBellSound
+        case startDelaySeconds, playStartingBell
     }
     
     init() {
@@ -49,6 +52,8 @@ class TimerSettings: ObservableObject, Codable {
         bellSound = try container.decode(BellSound.self, forKey: .bellSound)
         intervalMinutes = try container.decode(Int.self, forKey: .intervalMinutes)
         intervalBellSound = try container.decode(BellSound.self, forKey: .intervalBellSound)
+        startDelaySeconds = try container.decodeIfPresent(Int.self, forKey: .startDelaySeconds) ?? 0
+        playStartingBell = try container.decodeIfPresent(Bool.self, forKey: .playStartingBell) ?? true
     }
     
     func encode(to encoder: Encoder) throws {
@@ -60,6 +65,8 @@ class TimerSettings: ObservableObject, Codable {
         try container.encode(bellSound, forKey: .bellSound)
         try container.encode(intervalMinutes, forKey: .intervalMinutes)
         try container.encode(intervalBellSound, forKey: .intervalBellSound)
+        try container.encode(startDelaySeconds, forKey: .startDelaySeconds)
+        try container.encode(playStartingBell, forKey: .playStartingBell)
     }
     
     // MARK: - Persistence
@@ -80,6 +87,8 @@ class TimerSettings: ObservableObject, Codable {
             self.bellSound = decoded.bellSound
             self.intervalMinutes = decoded.intervalMinutes
             self.intervalBellSound = decoded.intervalBellSound
+            self.startDelaySeconds = decoded.startDelaySeconds
+            self.playStartingBell = decoded.playStartingBell
         }
     }
 }

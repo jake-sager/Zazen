@@ -11,8 +11,9 @@ import ActivityKit
 
 enum TimerState {
     case idle
+    case countdown  // Delay before meditation starts
     case running
-    case overtime  // Timer completed but user continues meditating
+    case overtime   // Timer completed but user continues meditating
     case completed
 }
 
@@ -20,6 +21,7 @@ struct TimerView: View {
     @State private var timerState: TimerState = .idle
     @State private var remainingSeconds: Int = 0
     @State private var overtimeSeconds: Int = 0  // Track overtime
+    @State private var countdownSeconds: Int = 0
     @State private var timer: Timer?
     @State private var initialDuration: Int = 0
     @State private var isDimmed: Bool = false
@@ -60,6 +62,8 @@ struct TimerView: View {
                         idleContent(dialMaxWidth: 280, topPadding: 22, spacing: 20)
                     }
                 }
+            } else if timerState == .countdown {
+                countdownView
             } else if timerState == .running {
                 runningView
             } else if timerState == .overtime {
@@ -93,8 +97,8 @@ struct TimerView: View {
             }
         }
         .onAppear {
-            // Keep screen on during meditation
-            UIApplication.shared.isIdleTimerDisabled = timerState == .running || timerState == .overtime
+            // Keep screen on during meditation (including countdown)
+            UIApplication.shared.isIdleTimerDisabled = timerState == .countdown || timerState == .running || timerState == .overtime
         }
         .onDisappear {
             // Stop any playing sounds when leaving the view
@@ -102,7 +106,7 @@ struct TimerView: View {
             SoundManager.shared.stopAllSounds()
         }
         .onChange(of: timerState) { _, newState in
-            UIApplication.shared.isIdleTimerDisabled = newState == .running || newState == .overtime
+            UIApplication.shared.isIdleTimerDisabled = newState == .countdown || newState == .running || newState == .overtime
             isSessionActive = newState != .idle && newState != .completed
             
             if newState == .running || newState == .overtime {
@@ -259,6 +263,25 @@ struct TimerView: View {
             .padding(.bottom, 24)
         }
         .padding(.horizontal, 24)
+    }
+    
+    // MARK: - Countdown View
+    
+    private var countdownView: some View {
+        VStack {
+            Spacer()
+            
+            TabularTimerText(text: formatTime(countdownSeconds), fontSize: 92)
+            
+            Spacer()
+            
+            Button(action: cancelCountdown) {
+                Text("CANCEL")
+            }
+            .buttonStyle(NeumorphicPillButtonStyle(kind: .destructive))
+            .padding(.horizontal, 48)
+            .padding(.bottom, 24)
+        }
     }
     
     // MARK: - Running View
@@ -694,10 +717,38 @@ struct TimerView: View {
         lastSavedStreak = 0
         overtimeSeconds = 0
         initialDuration = totalSeconds
-        remainingSeconds = totalSeconds
+        
+        if settings.startDelaySeconds > 0 {
+            // Start countdown before meditation
+            countdownSeconds = settings.startDelaySeconds
+            timerState = .countdown
+            
+            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+                if countdownSeconds > 1 {
+                    countdownSeconds -= 1
+                } else {
+                    timer?.invalidate()
+                    timer = nil
+                    beginMeditation()
+                }
+            }
+            RunLoop.current.add(timer!, forMode: .common)
+        } else {
+            beginMeditation()
+        }
+    }
+    
+    private func beginMeditation() {
+        remainingSeconds = initialDuration
         meditationStartTime = Date()
-        meditationEndTime = Date().addingTimeInterval(TimeInterval(totalSeconds))
+        meditationEndTime = Date().addingTimeInterval(TimeInterval(initialDuration))
         timerState = .running
+        
+        // Play starting bell if enabled
+        if settings.playStartingBell && settings.bellSound != .silence {
+            SoundManager.shared.configureForBackgroundPlayback()
+            SoundManager.shared.playBellSound(settings.bellSound)
+        }
         
         // Configure audio session for background playback
         SoundManager.shared.configureForBackgroundPlayback()
@@ -707,7 +758,7 @@ struct TimerView: View {
         
         // Start Live Activity
         Task { @MainActor in
-            LiveActivityManager.shared.startActivity(totalDuration: totalSeconds)
+            LiveActivityManager.shared.startActivity(totalDuration: initialDuration)
         }
         
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -722,6 +773,17 @@ struct TimerView: View {
         
         // Ensure timer fires in background
         RunLoop.current.add(timer!, forMode: .common)
+    }
+    
+    private func cancelCountdown() {
+        timer?.invalidate()
+        timer = nil
+        countdownSeconds = 0
+        timerState = .idle
+        isSessionActive = false
+        
+        // Force picker refresh
+        pickerRefreshID = UUID()
     }
     
     private func checkIntervalBell() {

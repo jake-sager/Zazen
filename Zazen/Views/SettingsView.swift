@@ -85,12 +85,61 @@ struct SettingsView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
             .neumorphicCard()
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("START DELAY")
+                        .font(.system(size: 11, weight: .medium))
+                        .tracking(1.32)
+                        .foregroundColor(Color.textMuted)
+
+                    Spacer()
+
+                    Text(delayLabel)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(timerSettings.startDelaySeconds > 0 ? Color.textPrimary : Color.textMuted)
+                }
+
+                Slider(
+                    value: Binding(
+                        get: { Double(timerSettings.startDelaySeconds) },
+                        set: {
+                            timerSettings.startDelaySeconds = Int($0)
+                            timerSettings.save()
+                        }
+                    ),
+                    in: 0...60,
+                    step: 5
+                )
+                .tint(Color.accentPrimary)
+
+                Toggle(isOn: Binding(
+                    get: { timerSettings.playStartingBell },
+                    set: {
+                        timerSettings.playStartingBell = $0
+                        timerSettings.save()
+                    }
+                )) {
+                    Text("STARTING BELL")
+                        .font(.system(size: 11, weight: .medium))
+                        .tracking(1.32)
+                        .foregroundColor(Color.textMuted)
+                }
+                .tint(Color.accentPrimary)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .neumorphicCard()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var clampedMaxTimerMinutes: Int {
         min(max(timerSettings.maxTimerMinutes, minMaxMinutes), maxMaxMinutes)
+    }
+
+    private var delayLabel: String {
+        timerSettings.startDelaySeconds == 0 ? "Off" : "\(timerSettings.startDelaySeconds)s"
     }
 
     private var maxTimeLabel: String {
