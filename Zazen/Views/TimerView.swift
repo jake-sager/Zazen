@@ -22,9 +22,14 @@ struct TimerView: View {
     @State private var overtimeSeconds: Int = 0  // Track overtime
     @State private var timer: Timer?
     @State private var initialDuration: Int = 0
-    @State private var originalBrightness: CGFloat = 1.0
     @State private var isDimmed: Bool = false
     @State private var dimTimer: Timer?
+    
+    // Sound preview state
+    private enum PreviewSource { case main, interval }
+    @State private var previewingSound: TimerSettings.BellSound? = nil
+    @State private var previewSource: PreviewSource = .main
+    @State private var previewTimer: Timer?
     @State private var meditationEndTime: Date?
     @State private var meditationStartTime: Date?
     
@@ -39,7 +44,6 @@ struct TimerView: View {
     
     // Time until screen dims (in seconds)
     private let dimDelay: TimeInterval = 30
-    private let dimmedBrightness: CGFloat = 0.05
     
     var body: some View {
         ZStack {
@@ -58,27 +62,34 @@ struct TimerView: View {
                 }
             } else if timerState == .running {
                 runningView
-                    .onTapGesture {
-                        // Wake screen on tap
-                        if isDimmed {
-                            restoreBrightness()
-                            scheduleDimming()
-                        }
-                    }
             } else if timerState == .overtime {
                 overtimeView
-                    .onTapGesture {
-                        // Wake screen on tap
-                        if isDimmed {
-                            restoreBrightness()
-                            scheduleDimming()
-                        }
-                    }
             }
             
             // Completion overlay
             if timerState == .completed {
                 completionOverlay
+            }
+            
+            // Screen dim overlay (dark overlay instead of changing system brightness)
+            if isDimmed && (timerState == .running || timerState == .overtime) {
+                Color.black
+                    .opacity(0.8)
+                    .ignoresSafeArea()
+                    .overlay {
+                        Text("tap to brighten")
+                            .font(.system(size: 13))
+                            .foregroundColor(.white.opacity(0.25))
+                            .offset(y: 60)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            isDimmed = false
+                        }
+                        scheduleDimming()
+                    }
+                    .transition(.opacity)
             }
         }
         .onAppear {
@@ -87,6 +98,7 @@ struct TimerView: View {
         }
         .onDisappear {
             // Stop any playing sounds when leaving the view
+            stopPreview()
             SoundManager.shared.stopAllSounds()
         }
         .onChange(of: timerState) { _, newState in
@@ -257,13 +269,6 @@ struct TimerView: View {
             
             TabularTimerText(text: formatTime(remainingSeconds), fontSize: 92)
             
-            if isDimmed {
-                Text("tap to brighten")
-                    .font(.system(size: 13))
-                    .foregroundColor(Color.textMuted.opacity(0.5))
-                    .padding(.top, 20)
-            }
-            
             Spacer()
 
             HStack(spacing: 12) {
@@ -304,13 +309,6 @@ struct TimerView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(Color.textMuted)
                 .padding(.top, 12)
-            
-            if isDimmed {
-                Text("tap to brighten")
-                    .font(.system(size: 13))
-                    .foregroundColor(Color.textMuted.opacity(0.5))
-                    .padding(.top, 20)
-            }
             
             Spacer()
 
@@ -440,9 +438,13 @@ struct TimerView: View {
         Button(action: {
             settings.bellSound = sound
             settings.save()
-            // Preview the sound
-            if sound != .silence {
-                SoundManager.shared.playBellSound(sound)
+            
+            if sound == .silence {
+                stopPreview()
+            } else if previewingSound == sound && previewSource == .main {
+                stopPreview()
+            } else {
+                startPreview(sound: sound, softer: false, source: .main)
             }
         }) {
             VStack(spacing: 4) {
@@ -466,6 +468,17 @@ struct TimerView: View {
                     Color.accentPrimary : Color.textMuted
             )
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                if previewingSound == sound && previewSource == .main {
+                    PhaseAnimator([false, true]) { phase in
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.accentPrimary.opacity(phase ? 0.25 : 0.05))
+                    } animation: { _ in
+                        .easeInOut(duration: 1.2)
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
         }
     }
     
@@ -474,6 +487,29 @@ struct TimerView: View {
         case .bowlA, .bowlB, .bowlC: return "bell.fill"
         case .silence: return "speaker.slash.fill"
         }
+    }
+    
+    // MARK: - Sound Preview
+    
+    private func startPreview(sound: TimerSettings.BellSound, softer: Bool, source: PreviewSource) {
+        stopPreview()
+        
+        if let duration = SoundManager.shared.playPreview(sound: sound, softer: softer) {
+            previewingSound = sound
+            previewSource = source
+            
+            previewTimer = Timer.scheduledTimer(withTimeInterval: duration + 0.3, repeats: false) { _ in
+                previewingSound = nil
+                previewTimer = nil
+            }
+        }
+    }
+    
+    private func stopPreview() {
+        previewTimer?.invalidate()
+        previewTimer = nil
+        SoundManager.shared.stopPreview()
+        previewingSound = nil
     }
     
     // MARK: - Interval Helpers
@@ -500,8 +536,12 @@ struct TimerView: View {
         Button(action: {
             settings.intervalBellSound = sound
             settings.save()
-            // Preview the sound
-            SoundManager.shared.playBellSound(sound, softer: true)
+            
+            if previewingSound == sound && previewSource == .interval {
+                stopPreview()
+            } else {
+                startPreview(sound: sound, softer: true, source: .interval)
+            }
         }) {
             VStack(spacing: 3) {
                 Image(systemName: iconForSound(sound))
@@ -524,6 +564,17 @@ struct TimerView: View {
                     Color.accentPrimary : Color.textMuted
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                if previewingSound == sound && previewSource == .interval {
+                    PhaseAnimator([false, true]) { phase in
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.accentPrimary.opacity(phase ? 0.25 : 0.05))
+                    } animation: { _ in
+                        .easeInOut(duration: 1.2)
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
         }
     }
     
@@ -611,13 +662,11 @@ struct TimerView: View {
     
     private func scheduleDimming() {
         cancelDimming()
-        originalBrightness = UIScreen.main.brightness
         
         dimTimer = Timer.scheduledTimer(withTimeInterval: dimDelay, repeats: false) { _ in
             withAnimation(.easeInOut(duration: 1.0)) {
                 isDimmed = true
             }
-            UIScreen.main.brightness = dimmedBrightness
         }
     }
     
@@ -628,8 +677,7 @@ struct TimerView: View {
     
     private func restoreBrightness() {
         if isDimmed {
-            UIScreen.main.brightness = originalBrightness
-            withAnimation {
+            withAnimation(.easeInOut(duration: 0.3)) {
                 isDimmed = false
             }
         }

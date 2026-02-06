@@ -39,6 +39,9 @@ final class SoundManager {
     // Cached tick player to keep dial snapping responsive.
     private var tickPlayer: AVAudioPlayer?
     
+    // Player for bell sound previews (separate from session sounds)
+    private var previewPlayer: AVAudioPlayer?
+    
     private init() {}
     
     /// Configure audio session for background playback (call when starting meditation)
@@ -105,6 +108,7 @@ final class SoundManager {
     /// Stop all currently playing sounds
     func stopAllSounds() {
         stopBackgroundKeepAliveAudio()
+        stopPreview()
         tickPlayer?.stop()
         playerQueue.sync {
             for player in activePlayers {
@@ -140,6 +144,38 @@ final class SoundManager {
             // Fallback to system sound
             AudioServicesPlaySystemSound(1157)
         }
+    }
+    
+    /// Play a preview of a bell sound. Returns the duration if playback started, nil otherwise.
+    func playPreview(sound: TimerSettings.BellSound, softer: Bool = false) -> TimeInterval? {
+        stopPreview()
+        guard sound != .silence else { return nil }
+        
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            return nil
+        }
+        
+        guard let url = soundFileURL(for: sound) else { return nil }
+        
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.volume = softer ? 0.5 : 1.0
+            player.prepareToPlay()
+            player.play()
+            previewPlayer = player
+            return player.duration
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Stop the current preview sound
+    func stopPreview() {
+        previewPlayer?.stop()
+        previewPlayer = nil
     }
     
     /// Plays a specific bell sound
