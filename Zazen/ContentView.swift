@@ -30,7 +30,7 @@ struct ContentView: View {
                     TimerView(store: store, settings: timerSettings, isSessionActive: $isSessionActive)
                         .transition(.opacity)
                 } else if selectedTab == .settings {
-                    SettingsView(timerSettings: timerSettings)
+                    SettingsView(timerSettings: timerSettings, store: store)
                         .transition(.opacity)
                 } else {
                     StatsView(store: store)
