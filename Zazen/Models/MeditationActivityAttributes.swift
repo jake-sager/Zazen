@@ -42,5 +42,18 @@ struct MeditationActivityAttributes: ActivityAttributes {
     /// Static data that doesn't change during the activity
     let totalDuration: Int  // Total meditation duration in seconds
     let startTime: Date
+    /// User's chosen appearance override for the activity, captured at the
+    /// start of the session.
+    /// - `"light"` / `"dark"` force that palette regardless of the device's
+    ///   system appearance.
+    /// - `nil` means "follow system" and the widget falls back to its own
+    ///   environment `\.colorScheme`.
+    let forcedColorSchemeRaw: String?
+
+    init(totalDuration: Int, startTime: Date, forcedColorSchemeRaw: String? = nil) {
+        self.totalDuration = totalDuration
+        self.startTime = startTime
+        self.forcedColorSchemeRaw = forcedColorSchemeRaw
+    }
 }
 

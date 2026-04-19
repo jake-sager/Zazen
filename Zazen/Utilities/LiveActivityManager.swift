@@ -30,9 +30,21 @@ final class LiveActivityManager {
         // End any existing activity first
         endActivity()
         
+        // Capture the user's appearance preference now so the lock-screen
+        // activity matches the app regardless of the device's system setting.
+        // `.system` leaves this nil so the widget can follow the device itself.
+        let forcedSchemeRaw: String? = {
+            switch AppearanceStorage.current {
+            case .system: return nil
+            case .light:  return "light"
+            case .dark:   return "dark"
+            }
+        }()
+
         let attributes = MeditationActivityAttributes(
             totalDuration: totalDuration,
-            startTime: Date()
+            startTime: Date(),
+            forcedColorSchemeRaw: forcedSchemeRaw
         )
         
         let initialState = MeditationActivityAttributes.ContentState(

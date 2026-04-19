@@ -9,16 +9,20 @@ import SwiftUI
 
 @main
 struct ZazenApp: App {
+    @AppStorage(AppearanceStorage.key) private var appearanceRaw: String = AppearanceMode.system.rawValue
+
+    private var appearance: AppearanceMode {
+        AppearanceMode(rawValue: appearanceRaw) ?? .system
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-                // The whole app uses a hardcoded warm-paper palette. Forcing light
-                // color scheme keeps system-rendered UI (navigation titles, Picker
-                // wheels, DatePickers, etc.) readable on the light background when
-                // the device is in dark mode -- otherwise they render with light
-                // text that nearly disappears on our paper backgrounds (e.g. the
-                // "Add Session" sheet).
-                .preferredColorScheme(.light)
+                // The washi palette is now fully dynamic (light + dark variants
+                // in `NeumorphicStyle.swift`), so system-rendered UI (Pickers,
+                // DatePickers, sheets) stays legible regardless of the chosen
+                // scheme. `nil` here means "follow the device".
+                .preferredColorScheme(appearance.colorScheme)
         }
     }
 }

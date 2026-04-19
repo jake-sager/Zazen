@@ -26,6 +26,8 @@ struct SettingsView: View {
     @State private var draftStartDelaySeconds: Int? = nil
     @State private var draftMaxTimerMinutes: Int? = nil
 
+    @AppStorage(AppearanceStorage.key) private var appearanceRaw: String = AppearanceMode.system.rawValue
+
     private var isDevBuild: Bool {
         Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
     }
@@ -41,6 +43,7 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(spacing: 20) {
+                    appearanceSection
                     timerSection
                     bonsaiSection
                 }
@@ -48,6 +51,57 @@ struct SettingsView: View {
                 .padding(.vertical, 32)
             }
         }
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceBinding: Binding<AppearanceMode> {
+        Binding(
+            get: { AppearanceMode(rawValue: appearanceRaw) ?? .system },
+            set: { appearanceRaw = $0.rawValue }
+        )
+    }
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("APPEARANCE")
+                .font(.system(size: 11, weight: .medium))
+                .tracking(1.32)
+                .foregroundColor(Color.textMuted)
+
+            HStack(spacing: 6) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    appearanceOption(mode: mode)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .neumorphicCard()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func appearanceOption(mode: AppearanceMode) -> some View {
+        let isSelected = appearanceBinding.wrappedValue == mode
+        return Button {
+            appearanceBinding.wrappedValue = mode
+        } label: {
+            Text(mode.displayLabel)
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(1.4)
+                .foregroundColor(isSelected ? Color.buttonText : Color.textPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? Color.buttonBackground : Color.neumorphicFrame)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? Color.clear : Color.borderPrimary, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private var timerSection: some View {
@@ -95,10 +149,6 @@ struct SettingsView: View {
                     }
                 )
                 .tint(Color.accentPrimary)
-
-                Text("Increase this to allow longer sessions on the timer dial.")
-                    .font(.system(size: 12))
-                    .foregroundColor(Color.textMuted)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
