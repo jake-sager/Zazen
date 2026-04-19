@@ -20,6 +20,12 @@ struct SettingsView: View {
     @State private var growthTimer: Timer? = nil
     @State private var isHoldingGrow = false
 
+    // Draft slider values held locally while dragging, so we don't fan out
+    // @Published changes (which re-render the entire app observing TimerSettings)
+    // on every drag frame. Committed on onEditingChanged(false).
+    @State private var draftStartDelaySeconds: Int? = nil
+    @State private var draftMaxTimerMinutes: Int? = nil
+
     private var isDevBuild: Bool {
         Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
     }
@@ -67,14 +73,26 @@ struct SettingsView: View {
 
                 Slider(
                     value: Binding(
-                        get: { Double(clampedMaxTimerMinutes) },
+                        get: { Double(displayedMaxTimerMinutes) },
                         set: { newValue in
-                            timerSettings.maxTimerMinutes = Int(newValue)
-                            timerSettings.save()
+                            // Round (not truncate) because float imprecision can yield
+                            // e.g. 74.9999 for a nominal step of 75, which Int() would
+                            // floor to 74 -- an off-step value that makes the Slider
+                            // stutter/re-snap and fire extra haptics. Also buffer in a
+                            // local @State so we don't trigger @Published-driven
+                            // re-renders on every drag tick.
+                            draftMaxTimerMinutes = Int(newValue.rounded())
                         }
                     ),
                     in: Double(minMaxMinutes)...Double(maxMaxMinutes),
-                    step: Double(step)
+                    step: Double(step),
+                    onEditingChanged: { editing in
+                        if !editing, let v = draftMaxTimerMinutes {
+                            timerSettings.maxTimerMinutes = v
+                            timerSettings.save()
+                            draftMaxTimerMinutes = nil
+                        }
+                    }
                 )
                 .tint(Color.accentPrimary)
 
@@ -97,19 +115,27 @@ struct SettingsView: View {
 
                     Text(delayLabel)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(timerSettings.startDelaySeconds > 0 ? Color.textPrimary : Color.textMuted)
+                        .foregroundColor(displayedStartDelaySeconds > 0 ? Color.textPrimary : Color.textMuted)
                 }
 
                 Slider(
                     value: Binding(
-                        get: { Double(timerSettings.startDelaySeconds) },
+                        get: { Double(displayedStartDelaySeconds) },
                         set: {
-                            timerSettings.startDelaySeconds = Int($0)
-                            timerSettings.save()
+                            // See maxTimerMinutes slider above for the rationale
+                            // on rounding + buffering in local @State.
+                            draftStartDelaySeconds = Int($0.rounded())
                         }
                     ),
                     in: 0...60,
-                    step: 5
+                    step: 5,
+                    onEditingChanged: { editing in
+                        if !editing, let v = draftStartDelaySeconds {
+                            timerSettings.startDelaySeconds = v
+                            timerSettings.save()
+                            draftStartDelaySeconds = nil
+                        }
+                    }
                 )
                 .tint(Color.accentPrimary)
 
@@ -138,21 +164,33 @@ struct SettingsView: View {
         min(max(timerSettings.maxTimerMinutes, minMaxMinutes), maxMaxMinutes)
     }
 
+    // Values to display (and for the slider bindings) that prefer the in-progress
+    // drag draft so the UI reflects the drag without reaching into @Published state.
+    private var displayedStartDelaySeconds: Int {
+        draftStartDelaySeconds ?? timerSettings.startDelaySeconds
+    }
+
+    private var displayedMaxTimerMinutes: Int {
+        draftMaxTimerMinutes ?? clampedMaxTimerMinutes
+    }
+
     private var delayLabel: String {
-        timerSettings.startDelaySeconds == 0 ? "Off" : "\(timerSettings.startDelaySeconds)s"
+        let s = displayedStartDelaySeconds
+        return s == 0 ? "Off" : "\(s)s"
     }
 
     private var maxTimeLabel: String {
-        if clampedMaxTimerMinutes >= 60 {
-            let h = clampedMaxTimerMinutes / 60
-            let m = clampedMaxTimerMinutes % 60
+        let value = displayedMaxTimerMinutes
+        if value >= 60 {
+            let h = value / 60
+            let m = value % 60
             if m == 0 {
                 return "Up to \(h) hr"
             } else {
                 return "Up to \(h) hr \(m) min"
             }
         } else {
-            return "Up to \(clampedMaxTimerMinutes) min"
+            return "Up to \(value) min"
         }
     }
 

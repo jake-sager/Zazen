@@ -323,29 +323,33 @@ struct AddSessionView: View {
                             HStack(spacing: 8) {
                                 Picker("Hours", selection: $hours) {
                                     ForEach(0..<24, id: \.self) { h in
-                                        Text("\(h)").tag(h)
+                                        Text("\(h)")
+                                            .foregroundColor(Color.textPrimary)
+                                            .tag(h)
                                     }
                                 }
                                 .pickerStyle(.wheel)
                                 .frame(width: 60, height: 120)
                                 .clipped()
-                                
+
                                 Text("hr")
                                     .font(.system(size: 14))
                                     .foregroundColor(Color.textMuted)
                             }
-                            
+
                             // Minutes
                             HStack(spacing: 8) {
                                 Picker("Minutes", selection: $minutes) {
                                     ForEach(0..<60, id: \.self) { m in
-                                        Text("\(m)").tag(m)
+                                        Text("\(m)")
+                                            .foregroundColor(Color.textPrimary)
+                                            .tag(m)
                                     }
                                 }
                                 .pickerStyle(.wheel)
                                 .frame(width: 60, height: 120)
                                 .clipped()
-                                
+
                                 Text("min")
                                     .font(.system(size: 14))
                                     .foregroundColor(Color.textMuted)
@@ -369,12 +373,15 @@ struct AddSessionView: View {
             }
             .navigationTitle("Add Session")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.neumorphicBackground, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(Color.textMuted)
+                    .foregroundColor(Color.textPrimary)
                 }
             }
         }

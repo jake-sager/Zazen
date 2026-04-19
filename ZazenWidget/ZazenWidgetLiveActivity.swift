@@ -9,6 +9,19 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 
+// Colors are hardcoded (not from Asset catalog / system dynamic colors) so the
+// lock-screen activity has the same warm-paper look regardless of the device's
+// light/dark appearance. Using adaptive colors here caused dark mode to flip
+// text to white on our near-white background tint, killing contrast.
+private extension Color {
+    // Lock-screen activity palette — matches the app's warm paper theme.
+    static let activityBackground = Color(red: 0.918, green: 0.906, blue: 0.882) // #EAE7E1
+    static let activityTextPrimary = Color(red: 0.22, green: 0.21, blue: 0.20)   // #383635
+    static let activityTextMuted = Color(red: 0.45, green: 0.43, blue: 0.40)     // #736E66
+    static let activityAccent = Color(red: 0.506, green: 0.596, blue: 0.675)     // muted slate #8198AC
+    static let activityLeaf = Color(red: 0.506, green: 0.627, blue: 0.537)       // sage #819F89
+}
+
 struct ZazenWidgetLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MeditationActivityAttributes.self) { context in
@@ -18,16 +31,17 @@ struct ZazenWidgetLiveActivity: Widget {
             HStack(spacing: 16) {
                 Image(systemName: "leaf.fill")
                     .font(.title)
-                    .foregroundColor(.green)
+                    .foregroundColor(.activityLeaf)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Meditating")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.activityTextMuted)
 
                     Text(endTime, style: .timer)
                         .font(.system(size: 28, weight: .medium, design: .monospaced))
                         .monospacedDigit()
+                        .foregroundColor(.activityTextPrimary)
                 }
 
                 Spacer()
@@ -41,32 +55,38 @@ struct ZazenWidgetLiveActivity: Widget {
                     EmptyView()
                 }
                 .progressViewStyle(.circular)
-                .tint(.green)
+                .tint(.activityAccent)
                 .frame(width: 44, height: 44)
             }
             .padding(16)
-            .activityBackgroundTint(Color(white: 0.95))
-            
+            .activityBackgroundTint(.activityBackground)
+            .activitySystemActionForegroundColor(.activityTextPrimary)
+
         } dynamicIsland: { context in
+            // Dynamic Island always renders on a black pill, so system adaptive
+            // colors (.primary / .secondary) work fine here -- they resolve to
+            // white / light gray against the dark background.
             let endTime = context.attributes.startTime.addingTimeInterval(TimeInterval(context.attributes.totalDuration))
 
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Image(systemName: "leaf.fill")
-                        .foregroundColor(.green)
+                        .foregroundColor(.activityLeaf)
                 }
-                
+
                 DynamicIslandExpandedRegion(.trailing) {
                     Text("Meditating")
                         .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                
+
                 DynamicIslandExpandedRegion(.center) {
                     Text(endTime, style: .timer)
                         .font(.system(size: 28, weight: .medium, design: .monospaced))
                         .monospacedDigit()
+                        .foregroundColor(.primary)
                 }
-                
+
                 DynamicIslandExpandedRegion(.bottom) {
                     Text("Zazen")
                         .font(.caption2)
@@ -74,14 +94,15 @@ struct ZazenWidgetLiveActivity: Widget {
                 }
             } compactLeading: {
                 Image(systemName: "leaf.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(.activityLeaf)
             } compactTrailing: {
                 Text(endTime, style: .timer)
                     .font(.system(size: 14, weight: .medium, design: .monospaced))
                     .monospacedDigit()
+                    .foregroundColor(.primary)
             } minimal: {
                 Image(systemName: "leaf.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(.activityLeaf)
             }
         }
     }

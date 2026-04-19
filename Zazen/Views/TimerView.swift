@@ -34,6 +34,12 @@ struct TimerView: View {
     @State private var previewTimer: Timer?
     @State private var meditationEndTime: Date?
     @State private var meditationStartTime: Date?
+    @State private var countdownEndTime: Date?
+
+    // Draft slider value held while the user drags the interval slider, so the
+    // drag doesn't fan @Published changes out to every observer of TimerSettings
+    // on every frame.
+    @State private var draftIntervalMinutes: Int? = nil
     
     @State private var lastSavedDurationSeconds: Int = 0
     @State private var lastSavedStreak: Int = 0
@@ -146,6 +152,16 @@ struct TimerView: View {
                 // Recalculate overtime
                 let now = Date()
                 overtimeSeconds = Int(now.timeIntervalSince(endTime))
+            } else if timerState == .countdown, let endTime = countdownEndTime {
+                // Resync the countdown after returning from background.
+                // The audio keep-alive usually keeps the Timer firing while locked, but
+                // this protects against any drift or missed ticks.
+                let now = Date()
+                if now >= endTime {
+                    beginMeditation()
+                } else {
+                    countdownSeconds = max(1, Int(endTime.timeIntervalSince(now).rounded(.up)))
+                }
             }
         case .background:
             // Timer will continue via notifications
@@ -408,19 +424,31 @@ struct TimerView: View {
                     
                     Text(intervalLabel)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(settings.intervalMinutes > 0 ? Color.textPrimary : Color.textMuted)
+                        .foregroundColor(displayedIntervalMinutes > 0 ? Color.textPrimary : Color.textMuted)
                 }
                 
                 Slider(
                     value: Binding(
-                        get: { Double(min(settings.intervalMinutes, maxIntervalMinutes)) },
+                        get: { Double(displayedIntervalMinutes) },
                         set: {
-                            settings.intervalMinutes = Int($0)
-                            settings.save()
+                            // Round (not truncate) to the step; Int($0) can produce
+                            // off-step values due to float precision, making the
+                            // Slider re-snap and fire extra haptics. Also buffer in
+                            // local @State so the drag doesn't trigger @Published
+                            // notifications (which re-render every TimerSettings
+                            // observer across the app) on every tick.
+                            draftIntervalMinutes = Int($0.rounded())
                         }
                     ),
                     in: 0...Double(max(maxIntervalMinutes, 1)),
-                    step: 1
+                    step: 1,
+                    onEditingChanged: { editing in
+                        if !editing, let v = draftIntervalMinutes {
+                            settings.intervalMinutes = min(v, maxIntervalMinutes)
+                            settings.save()
+                            draftIntervalMinutes = nil
+                        }
+                    }
                 )
                 .tint(Color.accentPrimary)
                 .disabled(maxIntervalMinutes < 1)
@@ -432,7 +460,7 @@ struct TimerView: View {
                 }
                 
                 // Interval bell sound selector (only when interval is set)
-                if settings.intervalMinutes > 0 {
+                if displayedIntervalMinutes > 0 {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("INTERVAL SOUND")
                             .font(.system(size: 10, weight: .medium))
@@ -453,7 +481,7 @@ struct TimerView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .neumorphicCard()
-            .animation(.easeInOut(duration: 0.2), value: settings.intervalMinutes > 0)
+            .animation(.easeInOut(duration: 0.2), value: displayedIntervalMinutes > 0)
         }
     }
     
@@ -544,14 +572,21 @@ struct TimerView: View {
     private var maxIntervalMinutes: Int {
         max(totalTimerMinutes / 2, 0)
     }
-    
+
+    // Value to display in the UI and feed the slider. Prefers the in-progress
+    // drag draft so labels and conditional UI track the drag without having to
+    // mutate @Published state on every frame.
+    private var displayedIntervalMinutes: Int {
+        min(draftIntervalMinutes ?? settings.intervalMinutes, maxIntervalMinutes)
+    }
+
     private var intervalLabel: String {
         if maxIntervalMinutes < 1 {
             return "Set timer first"
-        } else if settings.intervalMinutes == 0 {
+        } else if displayedIntervalMinutes == 0 {
             return "Off"
         } else {
-            return "Every \(settings.intervalMinutes) min"
+            return "Every \(displayedIntervalMinutes) min"
         }
     }
     
@@ -721,8 +756,24 @@ struct TimerView: View {
         if settings.startDelaySeconds > 0 {
             // Start countdown before meditation
             countdownSeconds = settings.startDelaySeconds
+            countdownEndTime = Date().addingTimeInterval(TimeInterval(settings.startDelaySeconds))
             timerState = .countdown
-            
+
+            // Start the silent background audio loop now so the countdown keeps
+            // ticking if the user locks the phone.
+            SoundManager.shared.configureForBackgroundPlayback()
+            SoundManager.shared.startBackgroundKeepAliveAudio()
+
+            // Start the Live Activity immediately so it appears on the lock screen
+            // alongside the countdown. The total duration spans the countdown + the
+            // meditation, so the widget's system-driven timer ticks seamlessly from
+            // the moment we start until the meditation ends. beginMeditation() will
+            // skip restarting it so there's no flicker at the hand-off.
+            let liveActivityDuration = settings.startDelaySeconds + initialDuration
+            Task { @MainActor in
+                LiveActivityManager.shared.startActivity(totalDuration: liveActivityDuration)
+            }
+
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
                 if countdownSeconds > 1 {
                     countdownSeconds -= 1
@@ -742,6 +793,7 @@ struct TimerView: View {
         remainingSeconds = initialDuration
         meditationStartTime = Date()
         meditationEndTime = Date().addingTimeInterval(TimeInterval(initialDuration))
+        countdownEndTime = nil
         timerState = .running
         
         // Play starting bell if enabled
@@ -756,9 +808,13 @@ struct TimerView: View {
         // on the lock screen without using notifications (no banners).
         SoundManager.shared.startBackgroundKeepAliveAudio()
         
-        // Start Live Activity
+        // Start Live Activity unless one was already started during the countdown
+        // -- its endTime already points at the meditation end, so restarting would
+        // just flicker the dynamic island and lock-screen widget.
         Task { @MainActor in
-            LiveActivityManager.shared.startActivity(totalDuration: initialDuration)
+            if LiveActivityManager.shared.currentActivity == nil {
+                LiveActivityManager.shared.startActivity(totalDuration: initialDuration)
+            }
         }
         
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -779,9 +835,16 @@ struct TimerView: View {
         timer?.invalidate()
         timer = nil
         countdownSeconds = 0
+        countdownEndTime = nil
         timerState = .idle
         isSessionActive = false
-        
+
+        // Tear down the keep-alive audio + Live Activity started for the countdown.
+        Task { @MainActor in
+            LiveActivityManager.shared.endActivity()
+        }
+        SoundManager.shared.deactivateAudioSession()
+
         // Force picker refresh
         pickerRefreshID = UUID()
     }
