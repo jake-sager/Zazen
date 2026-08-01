@@ -51,6 +51,17 @@
 			);
 			target = B2A514C92F0B265000E72376 /* ZazenWidgetExtension */;
 		};
+		B2A6D68D2F3A000000DDF466 /* Exceptions for "Zazen" folder in "Zazen" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"screenshots/17-pro-home.png",
+				"screenshots/17-pro-max-home.png",
+				"screenshots/17-pro-max-stats.png",
+				"screenshots/17-pro-max-timer.png",
+				"screenshots/17-pro-stats.png",
+			);
+			target = B2A6D67C2F08BA7500DDF466 /* Zazen */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -64,6 +75,9 @@
 		};
 		B2A6D67F2F08BA7500DDF466 /* Zazen */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B2A6D68D2F3A000000DDF466 /* Exceptions for "Zazen" folder in "Zazen" target */,
+			);
 			path = Zazen;
 			sourceTree = "<group>";
 		};
@@ -265,7 +279,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = jms.Zazen.dev.ZazenWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -300,7 +314,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = jms.Zazen.ZazenWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -453,7 +467,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = jms.Zazen.dev;
 				PRODUCT_NAME = "$(TARGET_NAME) Dev";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -487,7 +501,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = jms.Zazen;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

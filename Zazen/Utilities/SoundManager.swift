@@ -14,9 +14,9 @@ final class SoundManager {
     // File names for bundled sounds (without extension)
     // Sound files are in Zazen/Sounds/ folder
     private let soundFiles: [TimerSettings.BellSound: String] = [
-        .bowlA: "tibetan-singing-bowl-low-trimmed",
-        .bowlB: "tibetan-singing-bowl-struck-med-trimmed",
-        .bowlC: "tibetan-singing-bowl-high"
+        .bowlA: "synthetic-bell-low",
+        .bowlB: "synthetic-bell-middle",
+        .bowlC: "synthetic-bell-high"
     ]
 
     private let tickSoundFile = "volvo-signal-cleaned"
@@ -162,9 +162,11 @@ final class SoundManager {
         
         do {
             let player = try AVAudioPlayer(contentsOf: url)
-            player.volume = softer ? 0.5 : 1.0
+            let targetVolume: Float = softer ? 0.5 : 1.0
+            player.volume = 0
             player.prepareToPlay()
             player.play()
+            player.setVolume(targetVolume, fadeDuration: 0.06)
             previewPlayer = player
             return player.duration
         } catch {
@@ -173,9 +175,22 @@ final class SoundManager {
     }
     
     /// Stop the current preview sound
-    func stopPreview() {
-        previewPlayer?.stop()
+    func stopPreview(fadeDuration: TimeInterval = 0.04) {
+        guard let player = previewPlayer else { return }
         previewPlayer = nil
+
+        guard player.isPlaying, fadeDuration > 0 else {
+            player.stop()
+            return
+        }
+
+        // Stopping a resonant sound at an arbitrary non-zero sample creates an
+        // audible discontinuity. Ramp it down briefly before releasing it so
+        // switching between preview buttons stays click-free.
+        player.setVolume(0, fadeDuration: fadeDuration)
+        DispatchQueue.main.asyncAfter(deadline: .now() + fadeDuration) {
+            player.stop()
+        }
     }
     
     /// Plays a specific bell sound

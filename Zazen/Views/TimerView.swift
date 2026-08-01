@@ -24,8 +24,6 @@ struct TimerView: View {
     @State private var countdownSeconds: Int = 0
     @State private var timer: Timer?
     @State private var initialDuration: Int = 0
-    @State private var isDimmed: Bool = false
-    @State private var dimTimer: Timer?
     
     // Sound preview state
     private enum PreviewSource { case main, interval }
@@ -49,9 +47,6 @@ struct TimerView: View {
     var store: MeditationStore
     @ObservedObject var settings: TimerSettings
     @Binding var isSessionActive: Bool
-    
-    // Time until screen dims (in seconds)
-    private let dimDelay: TimeInterval = 30
     
     var body: some View {
         ZStack {
@@ -81,46 +76,19 @@ struct TimerView: View {
                 completionOverlay
             }
             
-            // Screen dim overlay (dark overlay instead of changing system brightness)
-            if isDimmed && (timerState == .running || timerState == .overtime) {
-                Color.black
-                    .opacity(0.8)
-                    .ignoresSafeArea()
-                    .overlay {
-                        Text("tap to brighten")
-                            .font(.system(size: 13))
-                            .foregroundColor(.white.opacity(0.25))
-                            .offset(y: 60)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            isDimmed = false
-                        }
-                        scheduleDimming()
-                    }
-                    .transition(.opacity)
-            }
         }
         .onAppear {
-            // Keep screen on during meditation (including countdown)
-            UIApplication.shared.isIdleTimerDisabled = timerState == .countdown || timerState == .running || timerState == .overtime
+            updateIdleTimer(for: timerState)
         }
         .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
             // Stop any playing sounds when leaving the view
             stopPreview()
             SoundManager.shared.stopAllSounds()
         }
         .onChange(of: timerState) { _, newState in
-            UIApplication.shared.isIdleTimerDisabled = newState == .countdown || newState == .running || newState == .overtime
+            updateIdleTimer(for: newState)
             isSessionActive = newState != .idle && newState != .completed
-            
-            if newState == .running || newState == .overtime {
-                scheduleDimming()
-            } else {
-                cancelDimming()
-                restoreBrightness()
-            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
@@ -163,6 +131,7 @@ struct TimerView: View {
                     countdownSeconds = max(1, Int(endTime.timeIntervalSince(now).rounded(.up)))
                 }
             }
+
         case .background:
             // Timer will continue via notifications
             // Stop any sounds that are currently playing (for test previews)
@@ -716,29 +685,13 @@ struct TimerView: View {
         }
     }
     
-    // MARK: - Screen Dimming
-    
-    private func scheduleDimming() {
-        cancelDimming()
-        
-        dimTimer = Timer.scheduledTimer(withTimeInterval: dimDelay, repeats: false) { _ in
-            withAnimation(.easeInOut(duration: 1.0)) {
-                isDimmed = true
-            }
-        }
-    }
-    
-    private func cancelDimming() {
-        dimTimer?.invalidate()
-        dimTimer = nil
-    }
-    
-    private func restoreBrightness() {
-        if isDimmed {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                isDimmed = false
-            }
-        }
+    // MARK: - Screen Sleep
+
+    private func updateIdleTimer(for state: TimerState) {
+        // Keep the short start countdown visible, then hand screen dimming and
+        // locking back to iOS. The system brightens the display on interaction,
+        // and the Live Activity remains visible after the device locks.
+        UIApplication.shared.isIdleTimerDisabled = state == .countdown
     }
     
     // MARK: - Timer Logic
