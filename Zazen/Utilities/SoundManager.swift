@@ -14,9 +14,9 @@ final class SoundManager {
     // File names for bundled sounds (without extension)
     // Sound files are in Zazen/Sounds/ folder
     private let soundFiles: [TimerSettings.BellSound: String] = [
-        .bowlA: "synthetic-bell-low",
-        .bowlB: "synthetic-bell-middle",
-        .bowlC: "synthetic-bell-high"
+        .bowlA: "big-bowl-soft",
+        .bowlB: "big-bowl",
+        .bowlC: "small-bowl"
     ]
 
     private let tickSoundFile = "volvo-signal-cleaned"
@@ -162,11 +162,9 @@ final class SoundManager {
         
         do {
             let player = try AVAudioPlayer(contentsOf: url)
-            let targetVolume: Float = softer ? 0.5 : 1.0
-            player.volume = 0
+            player.volume = softer ? 0.5 : 1.0
             player.prepareToPlay()
             player.play()
-            player.setVolume(targetVolume, fadeDuration: 0.06)
             previewPlayer = player
             return player.duration
         } catch {
