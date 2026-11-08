@@ -63,9 +63,20 @@ class BowlRecording:
 
 RECORDINGS: tuple[BowlRecording, ...] = (
     BowlRecording(
+        source_filename="small bowl.m4a",
+        output_filename="small-bowl.wav",
+        label="I (Small Bowl - High Strike, 508.5 / 1383.8 Hz)",
+        noise_window_sec=(0.5, 4.0),
+        sustain_hp_hz=380.0,
+        strike_hf_shelf_db=0.0,
+        overtone_decay_db_per_s=0.0,
+        target_lufs=-21.0,
+        max_crest_above_body_db=6.0,
+    ),
+    BowlRecording(
         source_filename="big bowl soft.m4a",
         output_filename="big-bowl-soft.wav",
-        label="I (Big Bowl - Soft Strike, 190.4 / 547.5 Hz)",
+        label="II (Big Bowl - Soft Strike, 190.4 / 547.5 Hz)",
         # Avoid 1.8s-6.5s where pre-strike handling/movement occurred
         noise_window_sec=(6.8, 9.4),
         sustain_hp_hz=150.0,
@@ -77,23 +88,12 @@ RECORDINGS: tuple[BowlRecording, ...] = (
     BowlRecording(
         source_filename="big bowl.m4a",
         output_filename="big-bowl.wav",
-        label="II (Big Bowl - Full Strike, 190.4 / 547.5 Hz)",
+        label="III (Big Bowl - Full Strike, 190.4 / 547.5 Hz)",
         noise_window_sec=(0.5, 5.5),
         sustain_hp_hz=150.0,
         strike_hf_shelf_db=-15.5,
         overtone_decay_db_per_s=24.0,
         target_lufs=-19.5,
-        max_crest_above_body_db=6.0,
-    ),
-    BowlRecording(
-        source_filename="small bowl.m4a",
-        output_filename="small-bowl.wav",
-        label="III (Small Bowl - High Strike, 508.5 / 1383.8 Hz)",
-        noise_window_sec=(0.5, 4.0),
-        sustain_hp_hz=380.0,
-        strike_hf_shelf_db=0.0,
-        overtone_decay_db_per_s=0.0,
-        target_lufs=-21.0,
         max_crest_above_body_db=6.0,
     ),
 )

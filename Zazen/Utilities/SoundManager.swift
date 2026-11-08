@@ -14,9 +14,9 @@ final class SoundManager {
     // File names for bundled sounds (without extension)
     // Sound files are in Zazen/Sounds/ folder
     private let soundFiles: [TimerSettings.BellSound: String] = [
-        .bowlA: "big-bowl-soft",
-        .bowlB: "big-bowl",
-        .bowlC: "small-bowl"
+        .bowlA: "small-bowl",
+        .bowlB: "big-bowl-soft",
+        .bowlC: "big-bowl"
     ]
 
     private let tickSoundFile = "volvo-signal-cleaned"
